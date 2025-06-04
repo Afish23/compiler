@@ -2,9 +2,6 @@ program example
     var a,b:integer;
 begin
     a:=2; 
-<<<<<<< HEAD
     b:=2*5+a;
-=======
-    b:=2*5+a
->>>>>>> af5eafb1457d77614a041d9570cfeec59d0b8dea
+    b:=2*5+a;
 end.

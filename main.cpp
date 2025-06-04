@@ -1,4 +1,4 @@
-﻿#include <iostream>
+﻿﻿#include <iostream>
 #include <vector>
 #include <unordered_map>
 #include <cctype>
@@ -892,8 +892,5 @@ int main() {
         cerr << "Error: " << e.what() << endl;
         return 1;
     }
-
-    fin.close();
-    printResults(allTokens, lexer);
     return 0;
 }
