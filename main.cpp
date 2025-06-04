@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <vector>
 #include <unordered_map>
 #include <cctype>
@@ -6,12 +6,13 @@
 #include <stdexcept>
 #include <iomanip>
 #include <sstream>
+#include <fstream> 
 using namespace std;
 
-// ö�����Ͷ���
+// 枚举类型定义
 enum TokenType { K, D, I, C1, C2, CT, ST };
 
-// ����״̬ö��
+// 定义状态枚举
 enum State {
     START,
     IN_IDENT,
@@ -24,12 +25,11 @@ enum State {
     IN_ERROR
 };
 
-// Ԥ������ű���֧�ֶ��ַ��������
+// 预定义符号表（支持多字符运算符）
 const unordered_map<string, int> DELIMITERS = {
-    {"-", 1}, {"/",2 }, {"(",3 }, {")",4 }, {"==", 5}, {"<=", 6},
-    {"<", 7}, {"+", 8}, {"*", 9}, {">", 10}, {"=", 11}, {",", 12},
-    {";", 13}, {"++", 14}, {"{", 15}, {"}", 16}, {"%", 17},{"^", 18},
-    {"&", 19}, {"!", 20}
+    {",", 1}, {":",2 }, {";",3 }, {":=",4 }, {"*", 5}, {"/", 6},
+    {"+", 7}, {"-", 8}, {".", 9}, {"(", 10}, {")", 11}, {"{", 12},
+    {"}", 13}, {"[", 14}, {"]", 15}
 };
 
 const unordered_map<string, int> KEYWORDS = {
@@ -38,7 +38,7 @@ const unordered_map<string, int> KEYWORDS = {
     {"type", 11}, {"procedure", 12}, {"record", 13}, {"boolean", 14}, {"array", 15}
 };
 
-// ���ű�������
+// 符号表管理类
 class SymbolTable {
 private:
     unordered_map<string, int> symbolMap;
@@ -78,24 +78,25 @@ public:
     }
 };
 
-// Token�ṹ��
+// Token结构体
 struct Token {
     TokenType type;
     int code;
     string value;
 
     Token(TokenType t, int c, string v = "")
-        : type(t), code(c), value(std::move(v)) {}
+        : type(t), code(c), value(std::move(v)) {
+    }
 };
 
-// �ʷ���������
+// 词法分析器类
 class Lexer {
 private:
-    SymbolTable idTable;      // ��ʶ����
-    SymbolTable constIntTable;  // ���ͳ�����
-    SymbolTable constFloatTable; // �����ͳ�����
-    SymbolTable constCharTable;  // �ַ�������
-    SymbolTable constStringTable; // �ַ���������
+    SymbolTable idTable;      // 标识符表
+    SymbolTable constIntTable;  // 整型常量表
+    SymbolTable constFloatTable; // 浮点型常量表
+    SymbolTable constCharTable;  // 字符常量表
+    SymbolTable constStringTable; // 字符串常量表
 
     string input;
     size_t pos;
@@ -134,11 +135,11 @@ private:
     }
 
     void processNumber(vector<Token>& tokens) {
-        bool isHex = false;//ʮ����������ʶ
-        bool isFloat = false;//��������ʶ
-        bool hasExp = false;//��ѧ��������ʶ
+        bool isHex = false;//十六进制数标识
+        bool isFloat = false;//浮点数标识
+        bool hasExp = false;//科学计数法标识
 
-        // ���16����ǰ׺
+        // 检查16进制前缀
         if (buffer == "0" && (currentChar() == 'x' || currentChar() == 'X')) {
             isHex = true;
             buffer += currentChar();
@@ -150,7 +151,7 @@ private:
             char c = currentChar();
 
             if (isHex) {
-                if (isxdigit(c)) {//���ʮ������ǰ׺�����ֵ�����Ƿ�Ϸ�
+                if (isxdigit(c)) {//检查十六进制前缀后的数值部分是否合法
                     buffer += c;
                     nextChar();
                 }
@@ -158,39 +159,39 @@ private:
                     break;
                 }
             }
-            else {//�����븡����ʶ��
+            else {//整数与浮点数识别
                 if (isdigit(c)) {
                     buffer += c;
                     nextChar();
                 }
                 else if (c == '.') {
-                    if (isFloat) {//�ѱ�ʶ��Ϊ���������������ʶ��һ��С����
+                    if (isFloat) {//已被识别为浮点数的情况下又识别到一个小数点
                         hasError = true;
                         buffer += c;
                         nextChar();
                         break;
                     }
-                    isFloat = true;//��ʶΪ������
+                    isFloat = true;//标识为浮点数
                     buffer += c;
                     nextChar();
                 }
                 else if (c == 'e' || c == 'E') {
-                    if (hasExp) {//�ѱ�ʶ��Ϊ��ѧ���������������ʶ��һ��e
+                    if (hasExp) {//已被识别为科学计数法的情况下又识别到一个e
                         hasError = true;
                         buffer += c;
                         nextChar();
                         break;
                     }
-                    isFloat = true;//��ʶΪ��ѧ��������������
+                    isFloat = true;//标识为科学计数法及浮点数
                     hasExp = true;
                     buffer += c;
                     nextChar();
 
-                    // ����ָ������
+                    // 处理指数符号
                     if (currentChar() == '+' || currentChar() == '-') {
                         buffer += currentChar();
                         nextChar();
-                        if (!isalpha(currentChar()))//��Ϊ��ѧ���������Ӽ��ź���������
+                        if (!isalpha(currentChar()))//若为科学计数法，加减号后需有数字
                         {
                             hasError = true;
                             break;
@@ -203,7 +204,7 @@ private:
             }
         }
 
-        // ���Ƿ���׺
+        // 检查非法后缀
         if (isalpha(currentChar())) {
             hasError = true;
             buffer += currentChar();
@@ -214,16 +215,16 @@ private:
             throw runtime_error("Invalid number format: " + buffer);
         }
 
-        // ���ӵ���Ӧ�ĳ�����
+        // 添加到相应的常量表
         if (isFloat || hasExp) {
             int id = constFloatTable.addSymbol(buffer);
             tokens.emplace_back(TokenType::C2, id + 1, buffer);
         }
         else if (isHex) {
-            // ת��16����Ϊ10����
+            // 转换16进制为10进制
             unsigned int value;
             stringstream ss;
-            ss << hex << buffer.substr(2); // ȥ��0xǰ׺
+            ss << hex << buffer.substr(2); // 去掉0x前缀
             ss >> value;
             string decStr = to_string(value);
             int id = constIntTable.addSymbol(decStr);
@@ -239,21 +240,21 @@ private:
     }
 
     void processCharLiteral(vector<Token>& tokens) {
-        nextChar(); // ������ʼ�ĵ�����
+        nextChar(); // 跳过开始的单引号
 
-        if (currentChar() == '\'') { // ���ַ����
+        if (currentChar() == '\'') { // 空字符情况
             hasError = true;
             throw runtime_error("Empty character literal");
         }
 
-        buffer = currentChar(); // ֻȡһ���ַ�
+        buffer = currentChar(); // 只取一个字符
         nextChar();
 
         if (currentChar() != '\'') {
             hasError = true;
             throw runtime_error("Unclosed character literal");
         }
-        nextChar(); // ���������ĵ�����
+        nextChar(); // 跳过结束的单引号
 
         int id = constCharTable.addSymbol(buffer);
         tokens.emplace_back(TokenType::CT, id + 1, buffer);
@@ -262,9 +263,9 @@ private:
         state = State::START;
     }
 
-    // �޸ĺ���ַ�����������
+    // 修改后的字符串常量处理
     void processStringLiteral(vector<Token>& tokens) {
-        nextChar(); // ������ʼ��˫����
+        nextChar(); // 跳过开始的双引号
 
         while (currentChar() != '"' && currentChar() != '\0') {
             buffer += currentChar();
@@ -275,9 +276,9 @@ private:
             hasError = true;
             throw runtime_error("Unclosed string literal");
         }
-        nextChar(); // ����������˫����
+        nextChar(); // 跳过结束的双引号
 
-        // ���ַ�����������
+        // 空字符串是允许的
         int id = constStringTable.addSymbol(buffer);
         tokens.emplace_back(TokenType::ST, id + 1, buffer);
 
@@ -286,11 +287,11 @@ private:
     }
 
     void processOperator(vector<Token>& tokens) {
-        // ̰��ƥ������
+        // 贪心匹配最长界符
         string longestMatch;
         size_t maxLen = 0;
 
-        // ������п��ܵĽ�����ȣ�1-2���ַ���
+        // 检查所有可能的界符长度（1-2个字符）
         for (size_t len = 1; len <= 2 && pos + len <= input.size(); ++len) {
             string potentialOp = input.substr(pos, len);
             if (DELIMITERS.count(potentialOp)) {
@@ -321,13 +322,13 @@ public:
         input = inputStr;
         pos = 0;
         state = State::START;
-        buffer.clear();
+        /*buffer.clear();
         hasError = false;
         idTable.clear();
         constIntTable.clear();
         constFloatTable.clear();
         constCharTable.clear();
-        constStringTable.clear();
+        constStringTable.clear();*/
 
         vector<Token> tokens;
 
@@ -353,12 +354,12 @@ public:
                     else if (c == '\'') {
                         state = State::IN_CHAR;
                         buffer.clear();
-                        nextChar(); // ������������
+                        nextChar(); // 先跳过单引号
                     }
                     else if (c == '"') {
                         state = State::IN_STRING;
                         buffer.clear();
-                        nextChar(); // ������˫����
+                        nextChar(); // 先跳过双引号
                     }
                     else if (c == '\0') {
                         pos++;
@@ -377,7 +378,7 @@ public:
                     break;
 
                 case State::IN_CHAR:
-                    if (currentChar() == '\'') { // ������������
+                    if (currentChar() == '\'') { // 遇到结束引号
                         if (buffer.empty()) {
                             hasError = true;
                             throw runtime_error("Empty character literal");
@@ -390,7 +391,7 @@ public:
                         int id = constCharTable.addSymbol(buffer);
                         tokens.emplace_back(TokenType::CT, id + 1, buffer);
                         buffer.clear();
-                        nextChar(); // ������������
+                        nextChar(); // 跳过结束引号
                         state = State::START;
                     }
                     else if (currentChar() == '\0') {
@@ -404,11 +405,11 @@ public:
                     break;
 
                 case State::IN_STRING:
-                    if (currentChar() == '"') { // ������������
+                    if (currentChar() == '"') { // 遇到结束引号
                         int id = constStringTable.addSymbol(buffer);
                         tokens.emplace_back(TokenType::ST, id + 1, buffer);
                         buffer.clear();
-                        nextChar(); // ������������
+                        nextChar(); // 跳过结束引号
                         state = State::START;
                     }
                     else if (currentChar() == '\0') {
@@ -467,7 +468,7 @@ void printResults(const vector<Token>& tokens, const Lexer& lexer) {
             cout << table.getSymbol(i) << " ";
         }
         cout << endl;
-    };
+        };
 
     printTable("I", lexer.getIdentifierTable());
     printTable("C1", lexer.getConstIntTable());
@@ -476,13 +477,646 @@ void printResults(const vector<Token>& tokens, const Lexer& lexer) {
     printTable("ST", lexer.getConstStringTable());
 }
 
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+//此处开始为语法分析的函数部分？
+
+class PascalParser {
+private:
+    // 关键字编码常量 - 使用更新后的映射表
+    const int KW_PROGRAM = 1;
+    const int KW_VAR = 2;
+    const int KW_INTEGER = 3;
+    const int KW_REAL = 4;
+    const int KW_CHAR = 5;
+    const int KW_BEGIN = 6;
+    const int KW_END = 7;
+    const int KW_CONST = 8;
+    const int KW_IF = 9;
+    const int KW_ELSE = 10;
+    const int KW_WHILE = 11;
+    const int KW_DO = 12;
+    const int KW_TYPE = 13;
+    const int KW_PROCEDURE = 14;
+    const int KW_RECORD = 15;
+    const int KW_BOOLEAN = 16;
+    const int KW_ARRAY = 17;
+    const int KW_AND = 18;
+    const int KW_OR = 19;
+    const int KW_THEN = 20;
+    const int KW_NOT = 21;
+    const int KW_TRUE = 22;
+    const int KW_FALSE = 23;
+    const int KW_OF = 24;
+    const int KW_DIV = 25;
+    const int KW_MOD = 26;
+    const int KW_RETURN = 27;   // 自定义编码 (原表中无return)
+
+    // 界符编码常量 - 使用更新后的映射表
+    const int P_COMMA = 1;
+    const int P_COLON = 2;
+    const int P_SEMICOLON = 3;
+    const int P_ASSIGN = 4;      // :=
+    const int P_STAR = 5;        // *
+    const int P_SLASH = 6;       // /
+    const int P_PLUS = 7;        // +
+    const int P_MINUS = 8;       // -
+    const int P_DOT = 9;         // .
+    const int P_LPAREN = 10;     // (
+    const int P_RPAREN = 11;     // )
+    const int P_LBRACE = 12;     // {
+    const int P_RBRACE = 13;     // }
+    const int P_LBRACKET = 14;   // [
+    const int P_RBRACKET = 15;   // ]
+    const int P_GREATER = 16;    // >
+    const int P_LESS = 17;       // <
+    const int P_GREATER_EQUAL = 18; // >=
+    const int P_LESS_EQUAL = 19; // <=
+    const int P_EQUAL = 20;      // =
+    const int P_DOTDOT = 21;
+    const int P_NOT_EQUAL = 22;
+
+    vector<Token> tokens;
+    size_t current_token_index;
+    int current_line; // 当前行号（用于错误报告）
+
+public:
+    PascalParser(const vector<Token>& tokens)
+        : tokens(tokens), current_token_index(0), current_line(1) {
+    }
+
+    // 主解析函数
+    void parse() {
+        parseProgram();
+        match(END_OF_INPUT, "end of input");
+        cout << "Syntax analysis completed successfully!" << endl;
+    }
+
+private:
+    // 伪枚举值用于匹配文件结束
+    static const TokenType END_OF_INPUT = static_cast<TokenType>(-1);
+
+    // 获取当前token
+    const Token& currentToken() const {
+        if (current_token_index < tokens.size()) {
+            return tokens[current_token_index];
+        }
+        static Token eof{ END_OF_INPUT, -1, "" };
+        return eof;
+    }
+
+    // 前进到下一个token
+    void advance() {
+        if (current_token_index < tokens.size()) {
+            current_token_index++;
+        }
+    }
+
+    // 语法错误处理
+    void syntaxError(const string& message) {
+        cerr << "Syntax error: " << message;
+
+        if (currentToken().type != END_OF_INPUT) {
+            cerr << " (Found: ";
+            switch (currentToken().type) {
+            case K:
+                cerr << "KEYWORD:" << currentToken().code;
+                break;
+            case D:
+                cerr << "DELIMITER:" << currentToken().code;
+                break;
+            case I:
+                cerr << "IDENTIFIER:" << currentToken().value;
+                break;
+            case C1:
+                cerr << "INTEGER:" << currentToken().value;
+                break;
+            case C2:
+                cerr << "REAL:" << currentToken().value;
+                break;
+            case CT:
+                cerr << "CHAR:" << currentToken().value;
+                break;
+            case ST:
+                cerr << "STRING:" << currentToken().value;
+                break;
+            default:
+                cerr << "UNKNOWN";
+            }
+            cerr << ")";
+        }
+        cerr << endl;
+        throw runtime_error("Syntax analysis failed");
+    }
+
+    // 通用匹配函数
+    void match(TokenType expected_type, const string& description, int expected_code = -1) {
+        if (currentToken().type == expected_type) {
+            if (expected_code == -1 || currentToken().code == expected_code) {
+                advance();
+                return;
+            }
+        }
+        syntaxError("Expected " + description);
+    }
+
+    // 匹配关键字
+    void matchKeyword(int keywordCode) {
+        match(K, "keyword " + to_string(keywordCode), keywordCode);
+    }
+
+    // 匹配界符
+    void matchDelimiter(int delimiterCode) {
+        match(D, "delimiter " + to_string(delimiterCode), delimiterCode);
+    }
+
+    // 匹配标识符
+    void matchIdentifier() {
+        match(I, "identifier");
+    }
+
+    // 匹配数字常量
+    void matchNumber() {
+        if (currentToken().type == C1 || currentToken().type == C2) {
+            advance();
+        }
+        else {
+            syntaxError("Expected number constant");
+        }
+    }
+
+    // 解析程序
+    void parseProgram() {
+        matchKeyword(KW_PROGRAM);
+        matchIdentifier(); // 程序名
+        parseVarDeclarations();
+        parseProcedureDeclarations();
+        parseMainBlock();
+    }
+
+    // 解析变量声明
+    void parseVarDeclarations() {
+        if (currentToken().type == K && currentToken().code == KW_VAR) {
+            matchKeyword(KW_VAR);
+            do {
+                parseIdentifierList();
+                matchDelimiter(P_COLON);
+                parseType();
+                matchDelimiter(P_SEMICOLON);
+            } while (currentToken().type == I); // 继续处理下一个声明
+        }
+    }
+
+    // 解析标识符列表
+    void parseIdentifierList() {
+        matchIdentifier();
+        while (currentToken().type == D && currentToken().code == P_COMMA) {
+            advance(); // 跳过逗号
+            matchIdentifier();
+        }
+    }
+
+
+    // 解析过程/函数声明
+    void parseProcedureDeclarations() {
+        while (currentToken().type == K && currentToken().code == KW_PROCEDURE) {
+            parseProcedureDeclaration();
+        }
+    }
+
+    // 解析单个过程声明
+    void parseProcedureDeclaration() {
+        matchKeyword(KW_PROCEDURE);
+        matchIdentifier(); // 过程名
+        matchDelimiter(P_LPAREN); // (
+
+        // 检查是否为空参数列表
+        if (currentToken().type != D || currentToken().code != P_RPAREN) {
+            parseParameterList();
+        }
+
+        matchDelimiter(P_RPAREN); // )
+        matchDelimiter(P_SEMICOLON); // ;
+        matchKeyword(KW_BEGIN); // begin
+        parseFunctionBody();
+        matchKeyword(KW_END); // end
+        matchDelimiter(P_SEMICOLON); // 匹配过程声明结束的分号
+    }
+
+    // 解析参数列表
+    void parseParameterList() {
+        // 允许空参数列表：遇到右括号直接返回
+        if (currentToken().type == D && currentToken().code == P_RPAREN) {
+            return;
+        }
+
+        // 解析第一个参数组
+        parseIdentifierList();
+        matchDelimiter(P_COLON);
+        parseType();
+
+        // 处理后续参数组
+        while (currentToken().type == D && currentToken().code == P_SEMICOLON) {
+            advance(); // 消耗分号
+            parseIdentifierList();
+            matchDelimiter(P_COLON);
+            parseType();
+        }
+    }
+
+    // 解析函数体
+    void parseFunctionBody() {
+        if (currentToken().type == K && currentToken().code == KW_RETURN) {
+            parseReturnStatement();
+        }
+        else {
+            syntaxError("Function body must contain a return statement");
+        }
+    }
+
+    // 解析返回语句
+    void parseReturnStatement() {
+        matchKeyword(KW_RETURN);
+        parseExpression();
+    }
+
+    // 解析主程序块
+    void parseMainBlock() {
+        matchKeyword(KW_BEGIN); // begin
+        parseStatementList();    // 使用专用的语句列表解析函数
+        matchKeyword(KW_END);    // end
+        matchDelimiter(P_DOT);   // .
+    }
+
+    // 解析语句列表
+    void parseStatementList() {
+        while (currentToken().type == I ||
+            (currentToken().type == K &&
+                (currentToken().code == KW_RETURN ||
+                    currentToken().code == KW_IF ||
+                    currentToken().code == KW_WHILE))) {
+            parseStatement();
+            matchDelimiter(P_SEMICOLON); // ;
+        }
+    }
+
+    // 解析语句
+    void parseStatement() {
+        if (currentToken().type == I) {
+            // 前瞻一个token
+            if (current_token_index + 1 < tokens.size()) {
+                const Token& lookahead = tokens[current_token_index + 1];
+                if (lookahead.type == D && lookahead.code == P_ASSIGN) {
+                    parseAssignment();
+                }
+                else if (lookahead.type == D && lookahead.code == P_LPAREN) {
+                    parseFunctionCall();
+                }
+                else {
+                    syntaxError("Invalid statement");
+                }
+            }
+            else {
+                syntaxError("Unexpected end of tokens");
+            }
+        }
+        else if (currentToken().type == K) {
+            int code = currentToken().code;
+            if (code == KW_RETURN) {
+                parseReturnStatement();
+            }
+            else if (code == KW_IF) {
+                parseIfStatement();
+            }
+            else if (code == KW_WHILE) {
+                parseWhileStatement();
+            }
+            else {
+                syntaxError("Unsupported statement type");
+            }
+        }
+        else {
+            syntaxError("Expected identifier or statement keyword");
+        }
+    }
+
+    // 解析if语句
+    void parseIfStatement() {
+        matchKeyword(KW_IF);
+        parseExpression();
+        matchKeyword(KW_THEN);
+        parseStatement();
+
+        if (currentToken().type == K && currentToken().code == KW_ELSE) {
+            advance();
+            parseStatement();
+        }
+    }
+
+    // 解析while语句
+    void parseWhileStatement() {
+        matchKeyword(KW_WHILE);
+        parseExpression();
+        matchKeyword(KW_DO);
+        parseStatement();
+    }
+
+    // 解析赋值语句
+    void parseAssignment() {
+        matchIdentifier();
+
+        // 处理下标和字段访问
+        while (true) {
+            if (currentToken().type == D && currentToken().code == P_LBRACKET) {
+                parseSubscript();
+            }
+            else if (currentToken().type == D && currentToken().code == P_DOT) {
+                parseFieldAccess();
+            }
+            else {
+                break;
+            }
+        }
+
+        matchDelimiter(P_ASSIGN);
+        parseExpression();
+    }
+
+    // 解析函数调用
+    void parseFunctionCall() {
+        matchIdentifier(); // 函数名
+        parseFunctionArguments(); // 使用新的参数解析函数
+    }
+
+    // 解析参数列表
+    void parseArgumentList() {
+        parseExpression();
+        while (currentToken().type == D && currentToken().code == P_COMMA) {
+            advance(); // 跳过逗号
+            parseExpression();
+        }
+    }
+
+    // 解析表达式
+    void parseExpression() {
+        parseLogicalExpression();
+    }
+    // 解析逻辑表达式
+    void parseLogicalExpression() {
+        parseLogicalTerm();
+        while (currentToken().type == K &&
+            (currentToken().code == KW_OR)) {
+            advance(); // 跳过or
+            parseLogicalTerm();
+        }
+    }
+
+    // 解析逻辑项
+    void parseLogicalTerm() {
+        parseLogicalFactor();
+        while (currentToken().type == K &&
+            (currentToken().code == KW_AND)) {
+            advance(); // 跳过and
+            parseLogicalFactor();
+        }
+    }
+
+    // 解析逻辑因子
+    void parseLogicalFactor() {
+        if (currentToken().type == K && currentToken().code == KW_NOT) {
+            advance(); // 跳过not
+            parseRelationalExpression();
+        }
+        else {
+            parseRelationalExpression();
+        }
+    }
+
+    // 解析关系表达式
+    void parseRelationalExpression() {
+        parseSimpleExpression();
+        if (currentToken().type == D) {
+            int code = currentToken().code;
+            // 直接列出所有关系运算符
+            if (code == P_EQUAL || code == P_NOT_EQUAL ||
+                code == P_GREATER || code == P_LESS ||
+                code == P_GREATER_EQUAL || code == P_LESS_EQUAL) {
+                advance();
+                parseSimpleExpression();
+            }
+        }
+    }
+
+    // 解析简单表达式
+    void parseSimpleExpression() {
+        parseTerm();
+        while (currentToken().type == D &&
+            (currentToken().code == P_PLUS || currentToken().code == P_MINUS)) {
+            advance(); // 跳过+或-
+            parseTerm();
+        }
+    }
+
+    // 解析项
+    void parseTerm() {
+        parseFactor();
+        while (currentToken().type == D || currentToken().type == K) {
+            if (currentToken().type == D &&
+                (currentToken().code == P_STAR || currentToken().code == P_SLASH)) {
+                advance();
+                parseFactor();
+            }
+            else if (currentToken().type == K &&
+                (currentToken().code == KW_DIV || currentToken().code == KW_MOD ||
+                    currentToken().code == KW_AND)) {
+                advance();
+                parseFactor();
+            }
+            else {
+                break;
+            }
+        }
+    }
+    // 添加函数参数解析函数
+    void parseFunctionArguments() {
+        matchDelimiter(P_LPAREN);
+        parseArgumentList();
+        matchDelimiter(P_RPAREN);
+    }
+    // 解析因子
+    void parseFactor() {
+        if (currentToken().type == I) {
+            matchIdentifier();
+
+            // 处理后缀：下标、字段访问、函数调用
+            while (true) {
+                if (currentToken().type == D && currentToken().code == P_LBRACKET) {
+                    parseSubscript(); // 数组下标
+                }
+                else if (currentToken().type == D && currentToken().code == P_DOT) {
+                    parseFieldAccess(); // 记录字段
+                }
+                else if (currentToken().type == D && currentToken().code == P_LPAREN) {
+                    parseFunctionArguments(); // 函数参数 // 修改这里
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        else if (currentToken().type == C1 || currentToken().type == C2) {
+            matchNumber();
+        }
+        else if (currentToken().type == D && currentToken().code == P_LPAREN) {
+            advance();
+            parseExpression();
+            matchDelimiter(P_RPAREN);
+        }
+        else if (currentToken().type == D &&
+            (currentToken().code == P_PLUS || currentToken().code == P_MINUS)) {
+            advance();
+            parseFactor();
+        }
+        else if (currentToken().type == K &&
+            (currentToken().code == KW_TRUE || currentToken().code == KW_FALSE)) {
+            advance();
+        }
+        else {
+            syntaxError("Expected identifier, number, boolean, or '('");
+        }
+    }
+
+    // 解析类型声明
+    void parseTypeDeclaration() {
+        matchKeyword(KW_TYPE);
+        matchIdentifier(); // 类型名
+        matchDelimiter(P_ASSIGN); // =
+        parseType();
+        matchDelimiter(P_SEMICOLON);
+    }
+
+    // 类型解析
+    void parseType() {
+        if (currentToken().type == K) {
+            int typeCode = currentToken().code;
+            if (typeCode == KW_INTEGER || typeCode == KW_REAL ||
+                typeCode == KW_CHAR || typeCode == KW_BOOLEAN) {
+                advance();
+            }
+            else if (typeCode == KW_ARRAY) {
+                parseArrayType();
+            }
+            else if (typeCode == KW_RECORD) {
+                parseRecordType();
+            }
+            else {
+                // 可能是自定义类型标识符
+                matchIdentifier();
+            }
+        }
+        else {
+            syntaxError("Expected type keyword or identifier");
+        }
+    }
+
+    // 解析数组类型
+    void parseArrayType() {
+        matchKeyword(KW_ARRAY);
+        matchDelimiter(P_LBRACKET);
+        parseSubrange();
+        matchDelimiter(P_RBRACKET);
+        matchKeyword(KW_OF);
+        parseType();
+    }
+
+    // 解析下标范围
+    void parseSubrange() {
+        parseConstant();
+        matchDelimiter(P_DOTDOT);
+        parseConstant();
+    }
+
+    // 解析常量
+    void parseConstant() {
+        if (currentToken().type == I || currentToken().type == C1 ||
+            currentToken().type == CT || currentToken().type == ST) {
+            advance();
+        }
+        else {
+            syntaxError("Expected constant");
+        }
+    }
+    // 解析记录类型
+    void parseRecordType() {
+        matchKeyword(KW_RECORD);
+        parseFieldList();
+        matchKeyword(KW_END);
+    }
+
+    // 解析字段列表
+    void parseFieldList() {
+        do {
+            parseIdentifierList();
+            matchDelimiter(P_COLON);
+            parseType();
+            matchDelimiter(P_SEMICOLON);
+        } while (currentToken().type == I); // 还有更多字段
+    }
+
+    // 解析下标访问
+    void parseSubscript() {
+        matchDelimiter(P_LBRACKET);
+        parseExpression();
+        matchDelimiter(P_RBRACKET);
+    }
+
+    // 解析字段访问
+    void parseFieldAccess() {
+        matchDelimiter(P_DOT);
+        matchIdentifier();
+    }
+
+
+
+
+};
+
 int main() {
-    string input;
-    getline(cin, input);
+    ifstream fin("input.txt");
+    if (!fin.is_open()) {
+        cerr << "无法打开输入文件" << endl;
+        return 0;
+    }
 
     Lexer lexer;
-    auto tokens = lexer.analyze(input);
-    printResults(tokens, lexer);
+    vector<Token> allTokens;
+    vector<Token> lineTokens;
+
+    string line;
+    while (getline(fin, line)) {
+        vector<Token> lineTokens = lexer.analyze(line);
+        //printResults(lineTokens, lexer);
+        allTokens.insert(allTokens.end(), lineTokens.begin(), lineTokens.end());
+    }
+
+    fin.close();
+    printResults(allTokens, lexer);
+
+    try {
+        PascalParser parser(allTokens);
+        parser.parse();
+    }
+    catch (const exception& e) {
+        cerr << "Error: " << e.what() << endl;
+        return 1;
+    }
 
     return 0;
 }
