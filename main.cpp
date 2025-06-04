@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <iomanip>
 #include <sstream>
+#include <fstream> 
 using namespace std;
 
 // 枚举类型定义
@@ -26,10 +27,9 @@ enum State {
 
 // 预定义符号表（支持多字符运算符）
 const unordered_map<string, int> DELIMITERS = {
-    {"-", 1}, {"/",2 }, {"(",3 }, {")",4 }, {"==", 5}, {"<=", 6},
-    {"<", 7}, {"+", 8}, {"*", 9}, {">", 10}, {"=", 11}, {",", 12},
-    {";", 13}, {"++", 14}, {"{", 15}, {"}", 16}, {"%", 17},{"^", 18},
-    {"&", 19}, {"!", 20}
+    {",", 1}, {":",2 }, {";",3 }, {":=",4 }, {"*", 5}, {"/", 6},
+    {"+", 7}, {"-", 8}, {".", 9}, {"(", 10}, {")", 11}, {"{", 12},
+    {"}", 13}, {"[", 14}, {"]", 15}
 };
 
 const unordered_map<string, int> KEYWORDS = {
@@ -321,13 +321,13 @@ public:
         input = inputStr;
         pos = 0;
         state = State::START;
-        buffer.clear();
+        /*buffer.clear();
         hasError = false;
         idTable.clear();
         constIntTable.clear();
         constFloatTable.clear();
         constCharTable.clear();
-        constStringTable.clear();
+        constStringTable.clear();*/
 
         vector<Token> tokens;
 
@@ -477,12 +477,24 @@ void printResults(const vector<Token>& tokens, const Lexer& lexer) {
 }
 
 int main() {
-    string input;
-    getline(cin, input);
+    ifstream fin("input.txt");
+    if (!fin.is_open()) {
+        cerr << "无法打开输入文件" << endl;
+        return 0;
+    }
 
     Lexer lexer;
-    auto tokens = lexer.analyze(input);
-    printResults(tokens, lexer);
+    vector<Token> allTokens;
+    vector<Token> lineTokens;
 
+    string line;
+    while (getline(fin, line)) {
+        vector<Token> lineTokens = lexer.analyze(line);
+        //printResults(lineTokens, lexer);
+        allTokens.insert(allTokens.end(), lineTokens.begin(), lineTokens.end());
+    }
+
+    fin.close();
+    printResults(allTokens, lexer);
     return 0;
 }
