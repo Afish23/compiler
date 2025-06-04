@@ -29,13 +29,16 @@ enum State {
 const unordered_map<string, int> DELIMITERS = {
     {",", 1}, {":",2 }, {";",3 }, {":=",4 }, {"*", 5}, {"/", 6},
     {"+", 7}, {"-", 8}, {".", 9}, {"(", 10}, {")", 11}, {"{", 12},
-    {"}", 13}, {"[", 14}, {"]", 15}
+    {"}", 13}, {"[", 14}, {"]", 15}, {">", 16}, {"<", 17}, {">=", 18},
+    {"<=", 19}, {"=", 20}, {"..", 21}, {"<>", 22}
 };
 
 const unordered_map<string, int> KEYWORDS = {
     {"program", 1}, {"var", 2},{"integer", 3},{"real", 4}, {"char", 5}, {"begin", 6},
     {"end", 7}, {"const", 8}, {"if", 9}, {"else", 10}, {"while", 11}, {"do", 12},
-    {"type", 11}, {"procedure", 12}, {"record", 13}, {"boolean", 14}, {"array", 15}
+    {"type", 13}, {"procedure", 14}, {"record", 15}, {"boolean", 16}, {"array", 17},
+    {"and", 18}, {"or", 19}, {"then", 20}, {"not", 21}, {"true", 22}, {"false", 23},
+    {"of", 24}, {"div", 25}, {"mod", 26}, {"return", 27}
 };
 
 // 符号表管理类
@@ -487,9 +490,10 @@ void printResults(const vector<Token>& tokens, const Lexer& lexer) {
 //此处开始为语法分析的函数部分？
 //此处开始为语法分析的函数部分？
 
+// 语法分析器类
 class PascalParser {
 private:
-    // 关键字编码常量 - 使用您提供的映射表
+    // 关键字编码常量 - 使用更新后的映射表
     const int KW_PROGRAM = 1;
     const int KW_VAR = 2;
     const int KW_INTEGER = 3;
@@ -497,25 +501,50 @@ private:
     const int KW_CHAR = 5;
     const int KW_BEGIN = 6;
     const int KW_END = 7;
-    const int KW_PROCEDURE = 14; // 使用procedure代替function
-    const int KW_RETURN = 100;   // 自定义编码 (原表中无return)
+    const int KW_CONST = 8;
+    const int KW_IF = 9;
+    const int KW_ELSE = 10;
+    const int KW_WHILE = 11;
+    const int KW_DO = 12;
+    const int KW_TYPE = 13;
+    const int KW_PROCEDURE = 14;
+    const int KW_RECORD = 15;
+    const int KW_BOOLEAN = 16;
+    const int KW_ARRAY = 17;
+    const int KW_AND = 18;
+    const int KW_OR = 19;
+    const int KW_THEN = 20;
+    const int KW_NOT = 21;
+    const int KW_TRUE = 22;
+    const int KW_FALSE = 23;
+    const int KW_OF = 24;
+    const int KW_DIV = 25;
+    const int KW_MOD = 26;
+    const int KW_RETURN = 27;   // 自定义编码 (原表中无return)
 
-    // 界符编码常量 - 使用您提供的映射表
+    // 界符编码常量 - 使用更新后的映射表
     const int P_COMMA = 1;
     const int P_COLON = 2;
     const int P_SEMICOLON = 3;
-    const int P_ASSIGN = 4;     // :=
-    const int P_STAR = 5;       // *
-    const int P_SLASH = 6;      // /
-    const int P_PLUS = 7;       // +
-    const int P_MINUS = 8;      // -
-    const int P_DOT = 9;        // .
-    const int P_LPAREN = 10;    // (
-    const int P_RPAREN = 11;    // )
-    const int P_LBRACE = 12;    // {
-    const int P_RBRACE = 13;    // }
-    const int P_LBRACKET = 14;  // [
-    const int P_RBRACKET = 15;  // ]
+    const int P_ASSIGN = 4;      // :=
+    const int P_STAR = 5;        // *
+    const int P_SLASH = 6;       // /
+    const int P_PLUS = 7;        // +
+    const int P_MINUS = 8;       // -
+    const int P_DOT = 9;         // .
+    const int P_LPAREN = 10;     // (
+    const int P_RPAREN = 11;     // )
+    const int P_LBRACE = 12;     // {
+    const int P_RBRACE = 13;     // }
+    const int P_LBRACKET = 14;   // [
+    const int P_RBRACKET = 15;   // ]
+    const int P_GREATER = 16;    // >
+    const int P_LESS = 17;       // <
+    const int P_GREATER_EQUAL = 18; // >=
+    const int P_LESS_EQUAL = 19; // <=
+    const int P_EQUAL = 20;      // =
+    const int P_DOTDOT = 21;
+    const int P_NOT_EQUAL = 22;
 
     vector<Token> tokens;
     size_t current_token_index;
@@ -523,8 +552,7 @@ private:
 
 public:
     PascalParser(const vector<Token>& tokens)
-        : tokens(tokens), current_token_index(0), current_line(1) {
-    }
+        : tokens(tokens), current_token_index(0), current_line(1) {}
 
     // 主解析函数
     void parse() {
@@ -639,10 +667,12 @@ private:
     void parseVarDeclarations() {
         if (currentToken().type == K && currentToken().code == KW_VAR) {
             matchKeyword(KW_VAR);
-            parseIdentifierList();
-            matchDelimiter(P_COLON); // 匹配冒号
-            parseType();
-            matchDelimiter(P_SEMICOLON); // 匹配分号
+            do {
+                parseIdentifierList();
+                matchDelimiter(P_COLON);
+                parseType();
+                matchDelimiter(P_SEMICOLON);
+            } while (currentToken().type == I); // 继续处理下一个声明
         }
     }
 
@@ -655,21 +685,6 @@ private:
         }
     }
 
-    // 解析类型
-    void parseType() {
-        if (currentToken().type == K) {
-            int typeCode = currentToken().code;
-            if (typeCode == KW_INTEGER || typeCode == KW_REAL || typeCode == KW_CHAR) {
-                advance();
-            }
-            else {
-                syntaxError("Expected type keyword (integer/real/char)");
-            }
-        }
-        else {
-            syntaxError("Expected type keyword");
-        }
-    }
 
     // 解析过程/函数声明
     void parseProcedureDeclarations() {
@@ -683,28 +698,38 @@ private:
         matchKeyword(KW_PROCEDURE);
         matchIdentifier(); // 过程名
         matchDelimiter(P_LPAREN); // (
-        parseParameterList();
+
+        // 检查是否为空参数列表
+        if (currentToken().type != D || currentToken().code != P_RPAREN) {
+            parseParameterList();
+        }
+
         matchDelimiter(P_RPAREN); // )
         matchDelimiter(P_SEMICOLON); // ;
         matchKeyword(KW_BEGIN); // begin
         parseFunctionBody();
         matchKeyword(KW_END); // end
-        matchDelimiter(P_SEMICOLON); // 添加这行 ✅ 匹配过程声明结束的分号
+        matchDelimiter(P_SEMICOLON); // 匹配过程声明结束的分号
     }
 
     // 解析参数列表
     void parseParameterList() {
-        if (currentToken().type == I) {
-            parseIdentifierList();
-            matchDelimiter(P_COLON); // :
-            parseType();
+        // 允许空参数列表：遇到右括号直接返回
+        if (currentToken().type == D && currentToken().code == P_RPAREN) {
+            return;
+        }
 
-            while (currentToken().type == D && currentToken().code == P_SEMICOLON) {
-                advance(); // 跳过分号
-                parseIdentifierList();
-                matchDelimiter(P_COLON); // :
-                parseType();
-            }
+        // 解析第一个参数组
+        parseIdentifierList();
+        matchDelimiter(P_COLON);
+        parseType();
+
+        // 处理后续参数组
+        while (currentToken().type == D && currentToken().code == P_SEMICOLON) {
+            advance(); // 消耗分号
+            parseIdentifierList();
+            matchDelimiter(P_COLON);
+            parseType();
         }
     }
 
@@ -727,15 +752,18 @@ private:
     // 解析主程序块
     void parseMainBlock() {
         matchKeyword(KW_BEGIN); // begin
-        parseStatementList();
-        matchKeyword(KW_END); // end
-        matchDelimiter(P_DOT); // .
+        parseStatementList();    // 使用专用的语句列表解析函数
+        matchKeyword(KW_END);    // end
+        matchDelimiter(P_DOT);   // .
     }
 
     // 解析语句列表
     void parseStatementList() {
         while (currentToken().type == I ||
-            (currentToken().type == K && currentToken().code == KW_RETURN)) {
+            (currentToken().type == K &&
+                (currentToken().code == KW_RETURN ||
+                    currentToken().code == KW_IF ||
+                    currentToken().code == KW_WHILE))) {
             parseStatement();
             matchDelimiter(P_SEMICOLON); // ;
         }
@@ -761,27 +789,72 @@ private:
                 syntaxError("Unexpected end of tokens");
             }
         }
-        else if (currentToken().type == K && currentToken().code == KW_RETURN) {
-            parseReturnStatement();
+        else if (currentToken().type == K) {
+            int code = currentToken().code;
+            if (code == KW_RETURN) {
+                parseReturnStatement();
+            }
+            else if (code == KW_IF) {
+                parseIfStatement();
+            }
+            else if (code == KW_WHILE) {
+                parseWhileStatement();
+            }
+            else {
+                syntaxError("Unsupported statement type");
+            }
         }
         else {
-            syntaxError("Expected identifier or return statement");
+            syntaxError("Expected identifier or statement keyword");
         }
+    }
+
+    // 解析if语句
+    void parseIfStatement() {
+        matchKeyword(KW_IF);
+        parseExpression();
+        matchKeyword(KW_THEN);
+        parseStatement();
+
+        if (currentToken().type == K && currentToken().code == KW_ELSE) {
+            advance();
+            parseStatement();
+        }
+    }
+
+    // 解析while语句
+    void parseWhileStatement() {
+        matchKeyword(KW_WHILE);
+        parseExpression();
+        matchKeyword(KW_DO);
+        parseStatement();
     }
 
     // 解析赋值语句
     void parseAssignment() {
-        matchIdentifier(); // 变量名
-        matchDelimiter(P_ASSIGN); // :=
+        matchIdentifier();
+
+        // 处理下标和字段访问
+        while (true) {
+            if (currentToken().type == D && currentToken().code == P_LBRACKET) {
+                parseSubscript();
+            }
+            else if (currentToken().type == D && currentToken().code == P_DOT) {
+                parseFieldAccess();
+            }
+            else {
+                break;
+            }
+        }
+
+        matchDelimiter(P_ASSIGN);
         parseExpression();
     }
 
     // 解析函数调用
     void parseFunctionCall() {
         matchIdentifier(); // 函数名
-        matchDelimiter(P_LPAREN); // (
-        parseArgumentList();
-        matchDelimiter(P_RPAREN); // )
+        parseFunctionArguments(); // 使用新的参数解析函数
     }
 
     // 解析参数列表
@@ -795,8 +868,52 @@ private:
 
     // 解析表达式
     void parseExpression() {
+        parseLogicalExpression();
+    }
+    // 解析逻辑表达式
+    void parseLogicalExpression() {
+        parseLogicalTerm();
+        while (currentToken().type == K &&
+            (currentToken().code == KW_OR)) {
+            advance(); // 跳过or
+            parseLogicalTerm();
+        }
+    }
+
+    // 解析逻辑项
+    void parseLogicalTerm() {
+        parseLogicalFactor();
+        while (currentToken().type == K &&
+            (currentToken().code == KW_AND)) {
+            advance(); // 跳过and
+            parseLogicalFactor();
+        }
+    }
+
+    // 解析逻辑因子
+    void parseLogicalFactor() {
+        if (currentToken().type == K && currentToken().code == KW_NOT) {
+            advance(); // 跳过not
+            parseRelationalExpression();
+        }
+        else {
+            parseRelationalExpression();
+        }
+    }
+
+    // 解析关系表达式
+    void parseRelationalExpression() {
         parseSimpleExpression();
-        // 可以扩展关系运算符等
+        if (currentToken().type == D) {
+            int code = currentToken().code;
+            // 直接列出所有关系运算符
+            if (code == P_EQUAL || code == P_NOT_EQUAL ||
+                code == P_GREATER || code == P_LESS ||
+                code == P_GREATER_EQUAL || code == P_LESS_EQUAL) {
+                advance();
+                parseSimpleExpression();
+            }
+        }
     }
 
     // 解析简单表达式
@@ -812,49 +929,165 @@ private:
     // 解析项
     void parseTerm() {
         parseFactor();
-        while (currentToken().type == D &&
-            (currentToken().code == P_STAR || currentToken().code == P_SLASH)) {
-            advance(); // 跳过*或/
-            parseFactor();
+        while (currentToken().type == D || currentToken().type == K) {
+            if (currentToken().type == D &&
+                (currentToken().code == P_STAR || currentToken().code == P_SLASH)) {
+                advance();
+                parseFactor();
+            }
+            else if (currentToken().type == K &&
+                (currentToken().code == KW_DIV || currentToken().code == KW_MOD ||
+                    currentToken().code == KW_AND)) {
+                advance();
+                parseFactor();
+            }
+            else {
+                break;
+            }
         }
     }
-
+    // 添加函数参数解析函数
+    void parseFunctionArguments() {
+        matchDelimiter(P_LPAREN);
+        parseArgumentList();
+        matchDelimiter(P_RPAREN);
+    }
     // 解析因子
     void parseFactor() {
         if (currentToken().type == I) {
-            // 前瞻一个token
-            if (current_token_index + 1 < tokens.size()) {
-                const Token& lookahead = tokens[current_token_index + 1];
-                if (lookahead.type == D && lookahead.code == P_LPAREN) {
-                    parseFunctionCall();
+            matchIdentifier();
+
+            // 处理后缀：下标、字段访问、函数调用
+            while (true) {
+                if (currentToken().type == D && currentToken().code == P_LBRACKET) {
+                    parseSubscript(); // 数组下标
+                }
+                else if (currentToken().type == D && currentToken().code == P_DOT) {
+                    parseFieldAccess(); // 记录字段
+                }
+                else if (currentToken().type == D && currentToken().code == P_LPAREN) {
+                    parseFunctionArguments(); // 函数参数 // 修改这里
                 }
                 else {
-                    matchIdentifier();
+                    break;
                 }
-            }
-            else {
-                matchIdentifier();
             }
         }
         else if (currentToken().type == C1 || currentToken().type == C2) {
             matchNumber();
         }
         else if (currentToken().type == D && currentToken().code == P_LPAREN) {
-            advance(); // 跳过(
+            advance();
             parseExpression();
-            matchDelimiter(P_RPAREN); // )
+            matchDelimiter(P_RPAREN);
         }
         else if (currentToken().type == D &&
-            (currentToken().code == P_PLUS ||
-                currentToken().code == P_MINUS)) {
-            // 处理一元运算符
-            advance(); // 跳过+或-
+            (currentToken().code == P_PLUS || currentToken().code == P_MINUS)) {
+            advance();
             parseFactor();
         }
+        else if (currentToken().type == K &&
+            (currentToken().code == KW_TRUE || currentToken().code == KW_FALSE)) {
+            advance();
+        }
         else {
-            syntaxError("Expected identifier, number, or '('");
+            syntaxError("Expected identifier, number, boolean, or '('");
         }
     }
+
+    // 解析类型声明
+    void parseTypeDeclaration() {
+        matchKeyword(KW_TYPE);
+        matchIdentifier(); // 类型名
+        matchDelimiter(P_ASSIGN); // =
+        parseType();
+        matchDelimiter(P_SEMICOLON);
+    }
+
+    // 类型解析
+    void parseType() {
+        if (currentToken().type == K) {
+            int typeCode = currentToken().code;
+            if (typeCode == KW_INTEGER || typeCode == KW_REAL ||
+                typeCode == KW_CHAR || typeCode == KW_BOOLEAN) {
+                advance();
+            }
+            else if (typeCode == KW_ARRAY) {
+                parseArrayType();
+            }
+            else if (typeCode == KW_RECORD) {
+                parseRecordType();
+            }
+            else {
+                // 可能是自定义类型标识符
+                matchIdentifier();
+            }
+        }
+        else {
+            syntaxError("Expected type keyword or identifier");
+        }
+    }
+
+    // 解析数组类型
+    void parseArrayType() {
+        matchKeyword(KW_ARRAY);
+        matchDelimiter(P_LBRACKET);
+        parseSubrange();
+        matchDelimiter(P_RBRACKET);
+        matchKeyword(KW_OF);
+        parseType();
+    }
+
+    // 解析下标范围
+    void parseSubrange() {
+        parseConstant();
+        matchDelimiter(P_DOTDOT);
+        parseConstant();
+    }
+
+    // 解析常量
+    void parseConstant() {
+        if (currentToken().type == I || currentToken().type == C1 ||
+            currentToken().type == CT || currentToken().type == ST) {
+            advance();
+        }
+        else {
+            syntaxError("Expected constant");
+        }
+    }
+    // 解析记录类型
+    void parseRecordType() {
+        matchKeyword(KW_RECORD);
+        parseFieldList();
+        matchKeyword(KW_END);
+    }
+
+    // 解析字段列表
+    void parseFieldList() {
+        do {
+            parseIdentifierList();
+            matchDelimiter(P_COLON);
+            parseType();
+            matchDelimiter(P_SEMICOLON);
+        } while (currentToken().type == I); // 还有更多字段
+    }
+
+    // 解析下标访问
+    void parseSubscript() {
+        matchDelimiter(P_LBRACKET);
+        parseExpression();
+        matchDelimiter(P_RBRACKET);
+    }
+
+    // 解析字段访问
+    void parseFieldAccess() {
+        matchDelimiter(P_DOT);
+        matchIdentifier();
+    }
+
+
+
+
 };
 
 
