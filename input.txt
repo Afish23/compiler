@@ -1,7 +1,11 @@
-program example
-    var a,b:integer;
+program multi_if_while;
+var n: integer;
 begin
-    a:=2; 
-    b:=2*5+a;
-    b:=2*5+a;
+    n := 3;
+    if n < 5 then
+        n := n + 10;
+    while n < 20 do
+        n := n + 2;
+    if n = 20 then
+        n := 0;
 end.
