@@ -1,0 +1,15 @@
+program if_else_block;
+var a, b: integer;
+begin
+    a := 7;
+    b := 0;
+    if a > 5 then
+    begin
+        b := a * 2;
+        a := a - 1;
+    end
+    else
+    begin
+        b := a + 10;
+    end;
+end.
