@@ -1,4 +1,4 @@
-﻿#include <iostream>
+﻿﻿#include <iostream>
 #include <vector>
 #include <unordered_map>
 #include <cctype>
@@ -127,7 +127,6 @@ private:
         }
         else {
             int id = idTable.addSymbol(buffer);
-            //tokens.emplace_back(TokenType::I, id + 1, buffer);
             Token new_token(TokenType::I, id + 1, buffer);
             tokens.push_back(new_token);
         }
@@ -324,13 +323,6 @@ public:
         input = inputStr;
         pos = 0;
         state = State::START;
-        /*buffer.clear();
-        hasError = false;
-        idTable.clear();
-        constIntTable.clear();
-        constFloatTable.clear();
-        constCharTable.clear();
-        constStringTable.clear();*/
 
         vector<Token> tokens;
 
@@ -478,17 +470,6 @@ void printResults(const vector<Token>& tokens, const Lexer& lexer) {
     printTable("CT", lexer.getConstCharTable());
     printTable("ST", lexer.getConstStringTable());
 }
-
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
-//此处开始为语法分析的函数部分？
 
 // 语法分析器类
 class PascalParser {
@@ -658,7 +639,11 @@ private:
     void parseProgram() {
         matchKeyword(KW_PROGRAM);
         matchIdentifier(); // 程序名
+        // 跳过Pascal允许的program后的分号
+        if (currentToken().type == D && currentToken().code == P_SEMICOLON)
+            advance();
         parseVarDeclarations();
+        while (currentToken().type == D && currentToken().code == P_SEMICOLON) advance();
         parseProcedureDeclarations();
         parseMainBlock();
     }
@@ -763,7 +748,8 @@ private:
             (currentToken().type == K &&
                 (currentToken().code == KW_RETURN ||
                     currentToken().code == KW_IF ||
-                    currentToken().code == KW_WHILE))) {
+                    currentToken().code == KW_WHILE ||
+                    currentToken().code == KW_BEGIN))) {
             parseStatement();
             matchDelimiter(P_SEMICOLON); // ;
         }
@@ -800,6 +786,9 @@ private:
             else if (code == KW_WHILE) {
                 parseWhileStatement();
             }
+            else if (code == KW_BEGIN) {
+                parseCompoundStatement();
+            }
             else {
                 syntaxError("Unsupported statement type");
             }
@@ -807,6 +796,13 @@ private:
         else {
             syntaxError("Expected identifier or statement keyword");
         }
+    }
+
+    // 解析begin...end复合语句
+    void parseCompoundStatement() {
+        matchKeyword(KW_BEGIN);
+        parseStatementList();
+        matchKeyword(KW_END);
     }
 
     // 解析if语句
@@ -1084,17 +1080,7 @@ private:
         matchDelimiter(P_DOT);
         matchIdentifier();
     }
-
-
-
-
 };
-
-
-
-
-
-
 
 int main() {
     ifstream fin("input.txt");
@@ -1103,18 +1089,13 @@ int main() {
         return 0;
     }
 
+    stringstream buffer;
+    buffer << fin.rdbuf();
+    string source = buffer.str();
+
     Lexer lexer;
-    vector<Token> allTokens;
-    vector<Token> lineTokens;
+    vector<Token> allTokens = lexer.analyze(source);
 
-    string line;
-    while (getline(fin, line)) {
-        vector<Token> lineTokens = lexer.analyze(line);
-        //printResults(lineTokens, lexer);
-        allTokens.insert(allTokens.end(), lineTokens.begin(), lineTokens.end());
-    }
-
-    fin.close();
     printResults(allTokens, lexer);
 
     try {
