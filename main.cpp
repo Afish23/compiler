@@ -959,7 +959,31 @@ private:
 
             // 语句分隔符
             if (currentToken().type == D && currentToken().code == P_SEMICOLON) {
-                advance();
+                advance(); // 消耗分号
+
+                // 检查分号后是否还有语句
+                if (currentToken().type == K &&
+                    (currentToken().code == KW_END || currentToken().code == KW_ELSE)) {
+                    break; // 分号后是结束关键字，结束语句列表
+                }
+            }
+            else {
+                // 缺少分号，但下一个token是语句的开始
+                if (currentToken().type == I ||
+                    (currentToken().type == K &&
+                        (currentToken().code == KW_BEGIN ||
+                            currentToken().code == KW_IF ||
+                            currentToken().code == KW_WHILE ||
+                            currentToken().code == KW_RETURN))) {
+                    // 报告警告但继续解析
+                    const string s = "Warning: Missing semicolon at line ";
+                    syntaxError(s);
+                    /* cerr << "Warning: Missing semicolon at line " << current_line << endl;*/
+                }
+                else {
+                    // 不是语句的开始，可能是块结束
+                    break;
+                }
             }
         }
     }
