@@ -6,9 +6,9 @@
 #include <stdexcept>
 #include <iomanip>
 #include <sstream>
-#include <fstream> 
-//#include "SymbolTablesUtils.h"
-//#include"SymbolTables.h"
+#include <fstream>
+#include "SymbolTablesUtils.h"
+
 using namespace std;
 
 // 枚举类型定义
@@ -645,6 +645,17 @@ private:
                 string constType = parseConstant(); // 解析常量值并返回类型
                 matchDelimiter(P_SEMICOLON);
 
+                // 类型表填写
+                TypeCode tcode = TypeCode::NONE;
+                if (constType == "integer") tcode = TypeCode::INT;
+                else if (constType == "real") tcode = TypeCode::REAL;
+                else if (constType == "char") tcode = TypeCode::CHAR;
+                else if (constType == "boolean") tcode = TypeCode::BOOL;
+                // ...扩展
+
+                int typIdx = insertType(tcode);
+
+
                 // 添加到符号表
                 symbolTable[current_scope][constName] = constType;
             } while (currentToken().type == I);
@@ -672,8 +683,20 @@ private:
                 string typeName = currentToken().value;
                 matchIdentifier();
                 matchDelimiter(P_EQUAL);
-                parseType(); // 记录类型定义
+                string baseType=parseType(); // 记录类型定义
                 matchDelimiter(P_SEMICOLON);
+
+
+                // 类型表
+                TypeCode tcode = TypeCode::NONE;
+                if (baseType == "integer") tcode = TypeCode::INT;
+                // ...扩展
+
+                int typIdx = insertType(tcode);
+
+                // 符号表，类别为 CatCode::TYPE
+                insertSymbol(typeName, typIdx, CatCode::TYPE);
+
             } while (currentToken().type == I);
         }
     }
@@ -730,10 +753,23 @@ private:
                 string varType = parseType(); // 返回类型字符串
                 matchDelimiter(P_SEMICOLON);
 
-                // 添加到符号表
+
+                // === 填写类型表 ===
+                TypeCode tcode = TypeCode::NONE;
+                if (varType == "integer") tcode = TypeCode::INT;
+                else if (varType == "real") tcode = TypeCode::REAL;
+                else if (varType == "char") tcode = TypeCode::CHAR;
+                else if (varType == "boolean") tcode = TypeCode::BOOL;
+                // ... 其他类型
+
+                int typIdx = insertType(tcode);
+
+                // === 填写符号表 ===
                 for (const auto& id : identifiers) {
-                    symbolTable[current_scope][id] = varType;
+                    insertSymbol(id, typIdx, CatCode::VAR);
                 }
+
+
             } while (currentToken().type == I);
         }
     }
@@ -1273,6 +1309,10 @@ int main() {
     try {
         PascalParser parser(allTokens);
         parser.parse();
+
+        // === 打印符号表和类型表 ===
+        printSymbolTable();
+        printTypeTable();
     }
     catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
