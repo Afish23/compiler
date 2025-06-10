@@ -18,8 +18,9 @@ struct TypeTableEntry {
     TypeTableEntry(TypeCode code = TypeCode::NONE, void* ptr = nullptr)
         : tval(code), tpoint(ptr) {}
 };
-
 extern vector<TypeTableEntry> typeTable;
+
+
 
 //=== 数组表 ===
 struct ArrayTable {
@@ -43,7 +44,7 @@ struct StructTable {
 
 
 //=== 符号表条目 ===
-enum class CatCode { FUNC, CONST, TYPE, FIELD, VAR, VN, VF, NONE };
+enum class CatCode { FUNC, CONST, TYPE, FIELD, VAR, VN, VF, NONE ,PROCEDURE};
 
 struct SymbolTableEntry {
     string name;        // 标识符名
@@ -54,13 +55,10 @@ struct SymbolTableEntry {
 
 extern vector<SymbolTableEntry> symbolTable;
 
-//参数表
-struct ParamEntry {
-    string name;
-    int typ;
-    CatCode cat; // vn/vf
-    int addr;
-};
+
+
+extern vector<ArrayTable> arrayTable;
+extern vector<StructTable> structTable;
 //函数表
 struct FuncTableEntry {
     int level;      // 层次号
