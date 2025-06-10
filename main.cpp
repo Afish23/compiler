@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>//parseExpression()返回内容不同，我的返回类型，这个返回内容
 #include <vector>
 #include <unordered_map>
 #include <cctype>
@@ -6,11 +6,49 @@
 #include <stdexcept>
 #include <iomanip>
 #include <sstream>
-#include <fstream>
+#include <fstream> 
 #include "SymbolTablesUtils.h"
-
 using namespace std;
 
+struct Quadruple {
+    string op;     // 操作符（如 "+", ":=", "jz" 等）
+    string arg1;   // 操作数1（变量、临时变量或常量）
+    string arg2;   // 操作数2
+    string result; // 结果变量或标签
+};
+
+class QuadrupleGenerator {
+private:
+    vector<Quadruple> quads;
+    int tempCounter = 0;  // 临时变量计数器（如 t0, t1...）
+    int labelCounter = 0; // 标签计数器（如 L0, L1...）
+
+public:
+    // 生成四元式并添加到列表
+    void emit(string op, string arg1, string arg2, string result) {
+        quads.push_back({ op, arg1, arg2, result });
+    }
+
+    // 生成临时变量名（用于表达式结果）
+    string newTemp() {
+        return "t" + to_string(tempCounter++);
+    }
+
+    // 生成标签（用于控制流）
+    string newLabel() {
+        return "L" + to_string(labelCounter++);
+    }
+
+    // 打印所有四元式
+    void printQuads() {
+        for (const auto& q : quads) {
+            cout << "(" << q.op << ", " << q.arg1 << ", " << q.arg2 << ", " << q.result << ")" << endl;
+        }
+    }
+};
+
+// 全局四元式生成器
+QuadrupleGenerator quadGen;
 // 枚举类型定义
 enum TokenType { K, D, I, C1, C2, CT, ST };
 
@@ -450,7 +488,7 @@ void printResults(const vector<Token>& tokens, const Lexer& lexer) {
             cout << table.getSymbol(i) << " ";
         }
         cout << endl;
-    };
+        };
 
     printTable("I", lexer.getIdentifierTable());
     printTable("C1", lexer.getConstIntTable());
@@ -469,6 +507,24 @@ void printResults(const vector<Token>& tokens, const Lexer& lexer) {
 //此处开始为语法分析的函数部分？
 //此处开始为语法分析的函数部分？
 //此处开始为语法分析的函数部分？
+
+string delimToStr(int code) {
+    switch (code) {
+    case 4:  return ":=";
+    case 5:  return "*";
+    case 6:  return "/";
+    case 7:  return "+";
+    case 8:  return "-";
+    case 16: return ">";
+    case 17: return "<";
+    case 18: return ">=";
+    case 19: return "<=";
+    case 20: return "=";
+    case 22: return "<>";
+    default: return "??";
+    }
+}
+
 
 // 语法分析器类（添加语义分析功能）
 class PascalParser {
@@ -536,22 +592,29 @@ private:
     // 语义分析新增成员 ===========================================
     // 符号表结构：[作用域层级][变量名] -> 类型信息
     unordered_map<int, unordered_map<string, string>> symbolTable;
+    unordered_map<string, string> tempVarType; // 临时变量类型表
+    unordered_map<string, unordered_map<string, string>> recordFieldTypes;
     int current_scope = 0; // 当前作用域层级
 
     // 类型映射表
     const unordered_map<int, string> typeMap = {
-        {KW_INTEGER, "integer"},
-        {KW_REAL, "real"},
-        {KW_CHAR, "char"},
-        {KW_BOOLEAN, "boolean"},
-        {KW_LONGINT, "longint"},
-        {KW_STRING, "string"},
+    {KW_INTEGER, "integer"},
+    {KW_REAL, "real"},
+    {KW_CHAR, "char"},
+    {KW_BOOLEAN, "boolean"},
+    {KW_LONGINT, "longint"},
+    {KW_STRING, "string"},
+    {KW_PACKED, "packed array"},
+    {KW_RECORD, "record"},
+
     };
+
     // ===========================================================
 
 public:
     PascalParser(const vector<Token>& tokens)
-        : tokens(tokens), current_token_index(0), current_line(1) {}
+        : tokens(tokens), current_token_index(0), current_line(1) {
+    }
 
     void parse() {
         parseProgram();
@@ -642,20 +705,24 @@ private:
                 string constName = currentToken().value;
                 matchIdentifier();
                 matchDelimiter(P_EQUAL);
+                string constValue = currentToken().value;
                 string constType = parseConstant(); // 解析常量值并返回类型
                 matchDelimiter(P_SEMICOLON);
 
-                // 类型表填写
+                // 类型表填写Add commentMore actions
                 TypeCode tcode = TypeCode::NONE;
                 if (constType == "integer") tcode = TypeCode::INT;
                 else if (constType == "real") tcode = TypeCode::REAL;
                 else if (constType == "char") tcode = TypeCode::CHAR;
                 else if (constType == "boolean") tcode = TypeCode::BOOL;
+                else if (constType == "boolean") tcode = TypeCode::BOOL;
+
                 // ...扩展
 
                 int typIdx = insertType(tcode);
-
-
+                //cout << constValue << " " << typIdx << endl;
+                int cidx = insertConst(constValue, typIdx);
+                insertSymbol(constName, typIdx, CatCode::CONST, cidx);
                 // 添加到符号表
 
                 symbolTable[current_scope][constName] = constType;
@@ -672,17 +739,22 @@ private:
         int typIdx = insertType(TypeCode::NONE); // 程序本身类型一般无具体类型
         insertSymbol(progName, typIdx, CatCode::FUNC); // 类型和类别你可以自定义
         symbolTable[current_scope][progName] = "program"; // 语义分析表也记一下
-
-
         // 跳过program行后的分号（Pascal允许）
         if (currentToken().type == D && currentToken().code == P_SEMICOLON)
             advance();
+
+        parseConstDeclarations();
+
+
+        parseTypeDeclarations();  // 新增的类型声明解析
         parseVarDeclarations();
         // 允许var后有多余分号
         while (currentToken().type == D && currentToken().code == P_SEMICOLON) advance();
         parseProcedureDeclarations();
         parseMainBlock();
+
     }
+
 
     // 语义分析：解析类型声明
     void parseTypeDeclarations() {
@@ -692,24 +764,151 @@ private:
                 string typeName = currentToken().value;
                 matchIdentifier();
                 matchDelimiter(P_EQUAL);
-                string baseType = parseType(); // 记录类型定义
+
+                int typIdx = -1;
+
+                // ==== 检查是否为数组类型 ====
+                if (currentToken().type == K && currentToken().code == KW_ARRAY) {
+                    advance(); // 跳过 array
+                    matchDelimiter(P_LBRACKET);
+
+                    int low = 0;
+                    if (currentToken().type == C1) {
+                        low = stoi(currentToken().value);
+                        int typIdx = insertType(TypeCode::INT);
+                        insertConst(currentToken().value, typIdx);
+                        advance();
+                    }
+                    matchDelimiter(P_DOTDOT);
+
+                    int up = 0;
+                    if (currentToken().type == C1) {
+                        up = stoi(currentToken().value);
+                        int typIdx = insertType(TypeCode::INT);
+                        insertConst(currentToken().value, typIdx);
+                        advance();
+                    }
+                    matchDelimiter(P_RBRACKET);
+                    matchKeyword(KW_OF);
+                    ArrayTable arr;
+                    //cout << typeName << endl;
+                    //arr.id = typeName;
+                    cout << typeName << endl;
+                    string baseType = parseType();
+                    if (baseType == "integer") arr.ctp = "itp";
+                    else if (baseType == "real") arr.ctp = "rtp";
+                    else if (baseType == "char") arr.ctp = "ctp";
+                    else if (baseType == "boolean") arr.ctp = "btp";
+                    else arr.ctp = "?";
+                    arr.low = low;
+                    arr.up = up;
+                    if (baseType == "integer") arr.clen = (up-low+1)*4;
+                    else if (baseType == "real") arr.clen = (up - low + 1) * 8;
+                    else if (baseType == "char") arr.clen = (up - low + 1) * 2;
+                    else if (baseType == "boolean") arr.clen = (up - low + 1) * 1;
+                    int arrIdx = arrayTable.size();
+                    arrayTable.push_back(arr);
+
+                    typIdx = insertType(TypeCode::ARRAY, &arrayTable[arrIdx]);
+                }
+                // ==== 检查是否为结构类型 ====
+                else if (currentToken().type == K && currentToken().code == KW_RECORD) {
+                // ---------- 关键修改区 ----------
+                advance(); // 跳过 record
+                unordered_map<string, string> fieldMap;
+                StructTable s;
+                int offset = 0;
+                while (!(currentToken().type == K && currentToken().code == KW_END)) {
+                    // 字段列表支持多个
+                    vector<string> fieldNames;
+                    fieldNames.push_back(currentToken().value);
+                    matchIdentifier();
+                    while (currentToken().type == D && currentToken().code == P_COMMA) {
+                        advance();
+                        fieldNames.push_back(currentToken().value);
+                        matchIdentifier();
+                    }
+                    matchDelimiter(P_COLON);
+                    string fieldType = parseType();
+                    TypeCode tcode = TypeCode::NONE;
+                    cout << fieldType << endl;
+                    for (const auto& fieldName : fieldNames) {
+                        StructField f;
+                        f.id = fieldName;
+                        if (fieldType == "integer") { f.tp = "itp"; }
+                        else if (fieldType == "real") { f.tp = "rtp"; }
+                        else if (fieldType == "char") { f.tp = "ctp"; }
+                        else if (fieldType == "boolean") { f.tp = "btp"; }
+                        else if (fieldType == "packed array of char") { f.tp = "arr"; }
+                        f.off = offset;
+                        int fieldLen=0;
+                        if (fieldType == "integer")  fieldLen = 4;
+                        else if (fieldType == "real")  fieldLen = 8;
+                        else if (fieldType == "char")  fieldLen = 2;
+                        else if (fieldType == "boolean")  fieldLen = 1; 
+                        else if (fieldType == "packed array of char") {
+                            for (const auto& arr : arrayTable) {
+                                //cout << arr.id << " " << fieldName <<" "<<1 << endl;
+                                if (arr.id == fieldName) { // 用字段名查
+                                    fieldLen = arr.clen;
+                                    break;
+                                }
+                            }
+                        }
+                        offset+= fieldLen;
+                        s.fields.push_back(f);
+
+                        // ---------- 关键：写入 recordFieldTypes ----------
+                        fieldMap[fieldName] = fieldType;
+                    }
+                    matchDelimiter(P_SEMICOLON);
+                }
+                matchKeyword(KW_END);
+
+                int stIdx = structTable.size();
+                structTable.push_back(s);
+                typIdx = insertType(TypeCode::RECORD, &structTable[stIdx]);
+
+                // ---------- 关键：写入 recordFieldTypes ----------
+                recordFieldTypes[typeName] = fieldMap;
+                }
+                // ==== 基本类型/类型别名 ====
+                else {
+                    string baseType = parseType();
+                    TypeCode tcode = TypeCode::NONE;
+                    if (baseType == "integer") tcode = TypeCode::INT;
+                    else if (baseType == "real") tcode = TypeCode::REAL;
+                    else if (baseType == "char") tcode = TypeCode::CHAR;
+                    else if (baseType == "boolean") tcode = TypeCode::BOOL;
+
+                    // ...补充其它
+                    typIdx = insertType(tcode);
+                }
+
                 matchDelimiter(P_SEMICOLON);
-
-
-                // 类型表
-                TypeCode tcode = TypeCode::NONE;
-                if (baseType == "integer") tcode = TypeCode::INT;
-                // ...扩展
-
-                int typIdx = insertType(tcode);
 
                 // 符号表，类别为 CatCode::TYPE
                 insertSymbol(typeName, typIdx, CatCode::TYPE);
-                symbolTable[current_scope][typeName] = baseType;
+                symbolTable[current_scope][typeName] = "type";
 
             } while (currentToken().type == I);
         }
     }
+    string parseVariable() {
+        string varName = currentToken().value;
+        matchIdentifier();
+
+        // 处理record字段访问
+        while (currentToken().type == D && currentToken().code == P_DOT) {
+            advance(); // 跳过点号
+            varName += "." + currentToken().value; // 组合字段名
+            matchIdentifier();
+        }
+
+        parseSuffix(); // 处理数组下标
+        return varName;
+    }
+
 
 
     vector<string> parseIdentifierList2() {
@@ -731,6 +930,7 @@ private:
             if (code == KW_REAL) { advance(); return "real"; }
             if (code == KW_CHAR) { advance(); return "char"; }
             if (code == KW_BOOLEAN) { advance(); return "boolean"; }
+            if (code == KW_PROCEDURE) { advance(); return "procedure"; }
         }
         else if (currentToken().type == I) {
             string s = currentToken().value;
@@ -740,8 +940,6 @@ private:
         syntaxError("Expected type keyword or identifier");
         return "";
     }
-
-
 
     // 语义分析：变量声明处理（符号表填充）
     void parseVarDeclarations() {
@@ -762,9 +960,7 @@ private:
                 matchDelimiter(P_COLON);
                 string varType = parseType(); // 返回类型字符串
                 matchDelimiter(P_SEMICOLON);
-
-
-                // === 填写类型表 ===
+                // === 填写类型表 ===Add commentMore actions
                 TypeCode tcode = TypeCode::NONE;
                 if (varType == "integer") tcode = TypeCode::INT;
                 else if (varType == "real") tcode = TypeCode::REAL;
@@ -775,32 +971,152 @@ private:
                 int typIdx = insertType(tcode);
 
                 // === 填写符号表 ===
+                // 添加到符号表
                 for (const auto& id : identifiers) {
                     insertSymbol(id, typIdx, CatCode::VAR);  // 写全局符号表（用于打印）
                     symbolTable[current_scope][id] = varType; // 写本地symbolTable供语义分析查找
+                    symbolTable[current_scope][id] = varType;
                 }
-
-
             } while (currentToken().type == I);
         }
     }
 
+
     // 语义分析：解析类型标识符
-    string parseType() {
+    // 可选参数 fieldOrTypeName，遇到数组时用于 arrayTable.id 字段存储
+    string parseType(const string& fieldOrTypeName = "") {
+        // 1. 用户定义类型标识符/类型别名
+        if (currentToken().type == I) {
+            string typeName = currentToken().value;
+            advance();
+            return typeName;
+        }
+
+        // 2. record
+        if (currentToken().type == K && currentToken().code == KW_RECORD) {
+            return parseRecordType(); // 你的原实现
+        }
+
+        // 3. packed array
+        if (currentToken().type == K && currentToken().code == KW_PACKED) {
+            advance();
+            matchKeyword(KW_ARRAY);
+            matchDelimiter(P_LBRACKET);
+
+            int low = 0, up = 0;
+            if (currentToken().type == C1) {
+                low = stoi(currentToken().value);
+                advance();
+            }
+            matchDelimiter(P_DOTDOT);
+            if (currentToken().type == C1) {
+                up = stoi(currentToken().value);
+                advance();
+            }
+            matchDelimiter(P_RBRACKET);
+            matchKeyword(KW_OF);
+
+            string elementType = parseType(); // 递归，支持嵌套
+
+            // 插入 arrayTable
+            ArrayTable arr;
+            arr.id = fieldOrTypeName; // 类型名或字段名
+            arr.low = low;
+            arr.up = up;
+            arr.ctp = elementType;
+            if (elementType == "integer") arr.clen = (up - low + 1) * 4;
+            else if (elementType == "real") arr.clen = (up - low + 1) * 8;
+            else if (elementType == "char") arr.clen = (up - low + 1) * 2;
+            else if (elementType == "boolean") arr.clen = (up - low + 1) * 1;
+            else arr.clen = 0;
+            arrayTable.push_back(arr);
+
+            return "packed array of " + elementType;
+        }
+
+        // 4. 普通 array
+        if (currentToken().type == K && currentToken().code == KW_ARRAY) {
+            advance();
+            matchDelimiter(P_LBRACKET);
+
+            int low = 0, up = 0;
+            if (currentToken().type == C1) {
+                low = stoi(currentToken().value);
+                advance();
+            }
+            matchDelimiter(P_DOTDOT);
+            if (currentToken().type == C1) {
+                up = stoi(currentToken().value);
+                advance();
+            }
+            matchDelimiter(P_RBRACKET);
+            matchKeyword(KW_OF);
+
+            string elementType = parseType();
+
+            ArrayTable arr;
+            arr.id = fieldOrTypeName;
+            arr.low = low;
+            arr.up = up;
+            arr.ctp = elementType;
+            if (elementType == "integer") arr.clen = (up - low + 1) * 4;
+            else if (elementType == "real") arr.clen = (up - low + 1) * 8;
+            else if (elementType == "char") arr.clen = (up - low + 1) * 2;
+            else if (elementType == "boolean") arr.clen = (up - low + 1) * 1;
+            else arr.clen = 0;
+            arrayTable.push_back(arr);
+
+            return "array of " + elementType;
+        }
+
+        // 5. 基本类型
         if (currentToken().type != K) {
-            syntaxError("Expected type keyword");
+            syntaxError("Expected type keyword or identifier");
         }
 
         int typeCode = currentToken().code;
-        advance(); // 消耗类型关键字
+        advance();
 
-        // 检查是否为有效类型
         if (typeMap.find(typeCode) == typeMap.end()) {
             semanticError("Invalid type specified");
         }
-
         return typeMap.at(typeCode);
     }
+
+    string parseRecordType(const string& recordName = "") {
+        matchKeyword(KW_RECORD);
+
+        unordered_map<string, string> fieldMap;
+        while (true) {
+            if (currentToken().type == K && currentToken().code == KW_END) {
+                break;
+            }
+            // 字段列表
+            vector<string> fieldNames;
+            fieldNames.push_back(currentToken().value);
+            matchIdentifier();
+            while (currentToken().type == D && currentToken().code == P_COMMA) {
+                advance();
+                fieldNames.push_back(currentToken().value);
+                matchIdentifier();
+            }
+            matchDelimiter(P_COLON);
+            string fieldType = parseType();
+            matchDelimiter(P_SEMICOLON);
+            for (const auto& fname : fieldNames) {
+                fieldMap[fname] = fieldType;
+            }
+        }
+        matchKeyword(KW_END);
+
+        // 记录record结构的字段到全局
+        if (!recordName.empty()) {
+            recordFieldTypes[recordName] = fieldMap;
+        }
+        return recordName.empty() ? "record" : recordName;
+    }
+
+
 
     void parseIdentifierList() {
         matchIdentifier();
@@ -821,26 +1137,36 @@ private:
         matchKeyword(KW_PROCEDURE);
         string procName = currentToken().value;
         matchIdentifier();
+        // 这里插入过程名到主符号表Add commentMore actions
+        int typIdx = insertType(TypeCode::NONE); // 或你的过程类型
+        insertSymbol(procName, typIdx, CatCode::FUNC);
 
         // 进入新作用域
         enterScope();
-
         matchDelimiter(P_LPAREN);
-
-        if (currentToken().type != D || currentToken().code != P_RPAREN) {
-            parseParameterList();
+     
+        // 参数列表
+        if (currentToken().type == D && currentToken().code == P_LPAREN) {
+            advance();
+            if (currentToken().type != D || currentToken().code != P_RPAREN) {
+                parseParameterList();
+            }
+            matchDelimiter(P_RPAREN);
         }
-
-        matchDelimiter(P_RPAREN);
         matchDelimiter(P_SEMICOLON);
+
+        // 允许过程体内的 var 声明
+        parseVarDeclarations();
+
         matchKeyword(KW_BEGIN);
         parseFunctionBody();
         matchKeyword(KW_END);
+        matchDelimiter(P_RPAREN);
         matchDelimiter(P_SEMICOLON);
 
-        // 退出当前作用域
         exitScope();
     }
+
 
     // 语义分析：进入新作用域
     void enterScope() {
@@ -888,6 +1214,14 @@ private:
             // 添加参数到符号表，标记引用类型
             for (const auto& id : identifiers) {
                 symbolTable[current_scope][id] = isReference ? "ref " + paramType : paramType;
+                int typIdx = -1;
+                    if (paramType == "integer") typIdx = insertType(TypeCode::INT);
+                    else if (paramType == "real") typIdx = insertType(TypeCode::REAL);
+                    else if (paramType == "char") typIdx = insertType(TypeCode::CHAR);
+                    else if (paramType == "boolean") typIdx = insertType(TypeCode::BOOL);
+
+                // ... 其它类型
+                insertSymbol(id, typIdx, isReference ? CatCode::VF : CatCode::VN);
             }
 
             // 检查参数分隔符
@@ -987,34 +1321,41 @@ private:
             }
         }
     }
+    string getExprType(const string& name) {
+        // 布尔常量
+        if (name == "true" || name == "false") return "boolean";
+        if (name.length() == 3 && name.front() == '\'' && name.back() == '\'') return "char";
+        if (name.length() > 3 && name.front() == '\'' && name.back() == '\'') return "string";
+        // 数字常量
+        bool isNum = !name.empty() && (isdigit(name[0]) || (name[0] == '-' && name.size() > 1));
+        if (isNum) {
+            if (name.find('.') != string::npos) return "real";
+            return "integer";
+        }
+        // 变量/临时变量
+        return getVariableType(name);
+    }
 
     // 语义分析：赋值语句类型检查
     void parseAssignment() {
-        string varName = currentToken().value;
-        parseVariable();
-
-        if (!isVariableDeclared(varName)) {
-            semanticError("Undeclared variable: " + varName);
+        string varName = parseVariable(); // 获取完整左值
+        string firstPart = varName.substr(0, varName.find('.'));
+        if (!isVariableDeclared(firstPart)) {
+            semanticError("Undeclared variable: " + firstPart);
         }
 
         matchDelimiter(P_ASSIGN);
-        string exprType = parseExpression();
+        string rhs = parseExpression(); // 返回表达式结果（变量名、常量、或临时变量名）
 
-        // 获取变量声明的基础类型（跳过ref）
         string varBaseType = getBaseType(getVariableType(varName));
-        string exprBaseType = getBaseType(exprType);
+        string exprBaseType = getBaseType(getExprType(rhs));
 
-        // 使用基础类型进行比较
         if (!isTypeCompatible(varBaseType, exprBaseType)) {
-            semanticError("Type mismatch: Cannot assign " + exprType +
+            semanticError("Type mismatch: Cannot assign " + rhs +
                 " to " + varBaseType + " variable '" + varName + "'");
         }
-    }
-    // 语义分析：解析变量（包括数组访问等）
-    void parseVariable() {
-        string varName = currentToken().value;
-        matchIdentifier();
-        parseSuffix(); // 处理数组下标等后缀
+
+        quadGen.emit(":=", rhs, "", varName);
     }
 
     // 语义分析：处理后缀（数组访问等）
@@ -1028,9 +1369,7 @@ private:
 
     // 语义分析：表达式类型推导
     string parseExpression() {
-        string leftType = parseSimpleExpression();
-
-        // 关系运算符
+        string left = parseSimpleExpression();
         if (currentToken().type == D &&
             (currentToken().code == P_EQUAL ||
                 currentToken().code == P_NOT_EQUAL ||
@@ -1038,64 +1377,82 @@ private:
                 currentToken().code == P_LESS_EQUAL ||
                 currentToken().code == P_GREATER ||
                 currentToken().code == P_GREATER_EQUAL)) {
-
-            Token op = currentToken();
+            int opCode = currentToken().code;
             advance();
-            string rightType = parseSimpleExpression();
+            string right = parseSimpleExpression();
 
-            // 关系运算要求两边类型兼容
+            // 类型检查
+            string leftType = getBaseType(getExprType(left));
+            string rightType = getBaseType(getExprType(right));
+            //cout << 1;
+            //cout << leftType << " " << rightType << "\n";
             if (!isTypeCompatible(leftType, rightType)) {
                 semanticError("Type mismatch in relational expression");
             }
 
-            // 关系表达式的结果总是布尔类型
-            return "boolean";
+            string temp = quadGen.newTemp();
+            quadGen.emit(delimToStr(opCode), left, right, temp);
+            return temp;
         }
-
-        return leftType;
+        return left;
     }
-
     // 语义分析：简单表达式类型推导
     string parseSimpleExpression() {
-        string leftType = parseTerm();
+        string left = parseTerm();
+        string leftType = getBaseType(getExprType(left));
 
-        // 加减运算符
         while (currentToken().type == D &&
             (currentToken().code == P_PLUS ||
                 currentToken().code == P_MINUS ||
                 currentToken().code == KW_OR)) {
 
+            int opCode = currentToken().code;
             Token op = currentToken();
             advance();
-            string rightType = parseTerm();
+
+            string right = parseTerm();
+            string rightType = getBaseType(getExprType(right));
 
             // 检查运算符适用性
             if (op.code == KW_OR) {
                 if (leftType != "boolean" || rightType != "boolean") {
                     semanticError("OR operator requires boolean operands");
                 }
-                leftType = "boolean"; // 结果类型
             }
             else {
                 if (!isNumeric(leftType) || !isNumeric(rightType)) {
                     semanticError("Arithmetic operator requires numeric operands");
                 }
-
-                // 类型提升：整数+实数→实数
-                if (leftType == "real" || rightType == "real") {
-                    leftType = "real";
-                }
             }
+
+            // 类型提升
+            string resultType;
+            if (op.code == KW_OR) {
+                resultType = "boolean";
+            }
+            else if (leftType == "real" || rightType == "real") {
+                resultType = "real";
+            }
+            else {
+                resultType = leftType;
+            }
+
+            string temp = quadGen.newTemp();
+            quadGen.emit(delimToStr(opCode), left, right, temp);
+            tempVarType[temp] = resultType; // 记录临时变量类型
+
+            left = temp;
+            leftType = resultType;
         }
 
-        return leftType;
+        return left;
     }
+
 
     // 语义分析：项类型推导
     string parseTerm() {
-        string leftType = parseFactor();
-
-        // 乘除运算符
+        string left = parseFactor();
+        string leftType = getBaseType(getExprType(left));
         while (currentToken().type == D &&
             (currentToken().code == P_STAR ||
                 currentToken().code == P_SLASH ||
@@ -1103,30 +1460,42 @@ private:
                 currentToken().code == KW_MOD ||
                 currentToken().code == KW_AND)) {
 
+            int opCode = currentToken().code;
             Token op = currentToken();
             advance();
-            string rightType = parseFactor();
 
+            string right = parseFactor();
+            string rightType = getBaseType(getExprType(right));
             // 检查运算符适用性
             if (op.code == KW_AND) {
                 if (leftType != "boolean" || rightType != "boolean") {
                     semanticError("AND operator requires boolean operands");
                 }
-                leftType = "boolean"; // 结果类型
             }
             else {
                 if (!isNumeric(leftType) || !isNumeric(rightType)) {
                     semanticError("Arithmetic operator requires numeric operands");
                 }
-
-                // 类型提升：整数*实数→实数
-                if (leftType == "real" || rightType == "real") {
-                    leftType = "real";
-                }
             }
-        }
+            // 类型提升
+            string resultType;
+            if (op.code == KW_AND) {
+                resultType = "boolean";
+            }
+            else if (leftType == "real" || rightType == "real") {
+                resultType = "real";
+            }
+            else {
+                resultType = leftType;
+            }
+            string temp = quadGen.newTemp();
+            quadGen.emit(delimToStr(opCode), left, right, temp);
+            tempVarType[temp] = resultType; // 记录临时变量类型
 
-        return leftType;
+            left = temp;
+            leftType = resultType;
+        }
+        return left;
     }
 
     // 语义分析：因子类型推导
@@ -1134,49 +1503,54 @@ private:
         if (currentToken().type == I) {
             string varName = currentToken().value;
             matchIdentifier();
-            parseSuffix();
-
-            // 返回变量声明类型
-            return getVariableType(varName);
+            return varName;
         }
         else if (currentToken().type == C1) {
+            string value = currentToken().value;
+            int typIdx = insertType(TypeCode::INT);
+            insertConst(value, typIdx); // 插入常量表
             advance();
-            return "integer";
+            return value;
         }
         else if (currentToken().type == C2) {
+            string value = currentToken().value;
+            int typIdx = insertType(TypeCode::REAL);
+            insertConst(value, typIdx); // 插入常量表
             advance();
-            return "real";
+            return value;
         }
-        else if (currentToken().type == CT) {
+        else if (currentToken().type == K &&
+            (currentToken().code == KW_TRUE || currentToken().code == KW_FALSE)) {
+            string value = (currentToken().code == KW_TRUE) ? "true" : "false";
             advance();
-            return "char";
+            return value;
         }
-        else if (currentToken().type == K) {
-            if (currentToken().code == KW_TRUE || currentToken().code == KW_FALSE) {
-                advance();
-                return "boolean";
-            }
-            else if (currentToken().code == KW_NOT) {
-                advance();
-                string exprType = parseFactor();
-                if (exprType != "boolean") {
-                    semanticError("NOT operator requires boolean operand");
-                }
-                return "boolean";
-            }
-            else if (currentToken().code == P_LPAREN) {
-                advance();
-                string exprType = parseExpression();
-                matchDelimiter(P_RPAREN);
-                return exprType;
-            }
-        }
-        else if (currentToken().type == ST) {
+        else if (currentToken().type == K && currentToken().code == KW_NOT) {
             advance();
-            return "string";
+            string val = parseFactor();
+            string valType = getBaseType(getExprType(val));
+            if (valType != "boolean") {
+                semanticError("NOT operator requires boolean operand");
+            }
+            string temp = quadGen.newTemp();
+            quadGen.emit("not", val, "", temp);
+            return temp;
         }
-        syntaxError("Unexpected token in factor");
-        return ""; // 避免编译警告
+        else if (currentToken().type == D && currentToken().code == P_LPAREN) {
+            advance();
+            string result = parseExpression();
+            matchDelimiter(P_RPAREN);
+            return result;
+        }
+        else if (currentToken().type == CT || currentToken().type == ST) {
+            string value = "'" + currentToken().value + "'";
+            advance();
+            return value;
+        }
+        else {
+            syntaxError("Unexpected token in factor");
+            return "";
+        }
     }
 
 
@@ -1196,17 +1570,45 @@ private:
 
     // 获取变量类型
     string getVariableType(const string& name) {
+        vector<string> fields = split(name, '.');
+        string type = ""; // 变量/record类型
+        if (tempVarType.count(name)) return tempVarType[name];
+        // 1. 查找根变量类型
         for (int scope = current_scope; scope >= 0; --scope) {
             if (symbolTable.find(scope) != symbolTable.end()) {
-                auto it = symbolTable[scope].find(name);
+                auto it = symbolTable[scope].find(fields[0]);
                 if (it != symbolTable[scope].end()) {
-                    return it->second;
+                    type = it->second;
+                    break;
                 }
             }
         }
-        semanticError("Variable not found: " + name);
-        return ""; // 避免编译警告
+        if (type.empty()) {
+            semanticError("Variable not found: " + fields[0]);
+            return "";
+        }
+
+        // 2. 递归查找record字段类型
+        for (size_t i = 1; i < fields.size(); ++i) {
+            // 查找record字段定义
+            if (recordFieldTypes.find(type) != recordFieldTypes.end()) {
+                auto& fmap = recordFieldTypes[type];
+                if (fmap.find(fields[i]) != fmap.end()) {
+                    type = fmap[fields[i]];
+                }
+                else {
+                    semanticError("Field not found: " + fields[i] + " in record " + type);
+                    return "";
+                }
+            }
+            else {
+                semanticError("Type is not a record: " + type);
+                return "";
+            }
+        }
+        return type;
     }
+
 
     // 语义分析：类型兼容性检查（跳过ref前缀）
     bool isTypeCompatible(const string& targetType, const string& sourceType) {
@@ -1214,20 +1616,53 @@ private:
         string baseTarget = getBaseType(targetType);
         string baseSource = getBaseType(sourceType);
 
-        // 相同类型直接兼容
+        // 1. 相同类型直接兼容
         if (baseTarget == baseSource) return true;
 
-        // 特殊规则：整数可赋值给实数
+        // 2. 特殊规则：整数可赋值给实数
         if (baseTarget == "real" && baseSource == "integer") return true;
 
-        // 特殊规则：字符可赋值给字符串
+        // 3. 特殊规则：字符可赋值给字符串
         if (baseTarget == "string" && baseSource == "char") return true;
 
-        // 布尔类型兼容性
-        if (baseTarget == "boolean" && baseSource == "boolean") return true;
+        // 4. packed array of char 与 string 兼容
+        if (baseTarget.find("packed array of char") != string::npos &&
+            baseSource == "string") {
+            return true;
+        }
+        if (baseTarget.find("array of char") != string::npos &&
+            baseSource == "string") {
+            return true;
+        }
+        if (baseTarget.find("array of integer") != string::npos &&
+            baseSource == "integer") {
+            return true;
+        }
+        if (baseTarget.find("packed array of integer") != string::npos &&
+            baseSource == "integer") {
+            return true;
+        }
+        // 5. 用户定义类型比较
+        if (baseTarget == baseSource) return true; // 相同类型名
 
+        // 6. 检查类型别名是否指向相同类型
+        string resolvedTarget = resolveTypeAlias(baseTarget);
+        string resolvedSource = resolveTypeAlias(baseSource);
+        if (resolvedTarget == resolvedSource) {
+            return true;
+        }
+        if (baseTarget == "longint" && baseSource == "integer") return true;
         return false;
     }
+    //解析类别名
+    string resolveTypeAlias(const string& typeName) {
+        // 检查全局作用域中的类型别名
+        if (symbolTable[0].find(typeName) != symbolTable[0].end()) {
+            return symbolTable[0][typeName];
+        }
+        return typeName;
+    }
+
 
     // 语义分析：获取基础类型（忽略ref前缀）
     string getBaseType(const string& type) {
@@ -1271,25 +1706,54 @@ private:
     void parseCompoundStatement() {
         matchKeyword(KW_BEGIN);
         parseStatementList();
+
+        // 处理可选的end前分号
+        if (currentToken().type == D && currentToken().code == P_SEMICOLON) {
+            advance();
+        }
+
         matchKeyword(KW_END);
     }
 
     void parseIfStatement() {
         matchKeyword(KW_IF);
-        parseExpression();
+        string condition = parseExpression(); // 生成条件表达式
+        string elseLabel = quadGen.newLabel();
+        string endLabel = quadGen.newLabel();
+
+        quadGen.emit("if", condition, "", elseLabel); // 条件为假跳转到else
+
         matchKeyword(KW_THEN);
-        parseStatement();
+        parseStatement(); // then分支
+
+        quadGen.emit("el", "", "", endLabel); // then分支结束跳转到end
+
+        quadGen.emit("label", elseLabel, "", ""); // else分支入口
+
         if (currentToken().type == K && currentToken().code == KW_ELSE) {
             matchKeyword(KW_ELSE);
-            parseStatement();
+            parseStatement(); // else分支
         }
+        quadGen.emit("ie", "", "", "");
+        quadGen.emit("label", endLabel, "", ""); // if语句结束
+
     }
 
     void parseWhileStatement() {
         matchKeyword(KW_WHILE);
-        parseExpression();
+        string beginLabel = quadGen.newLabel();
+        quadGen.emit("wh", "", "", "");
+        quadGen.emit("label", beginLabel, "", "");
+        string condition = parseExpression();
+        string endLabel = quadGen.newLabel();
+        quadGen.emit("do", condition, "", endLabel);
         matchKeyword(KW_DO);
         parseStatement();
+
+        quadGen.emit("jmp", "", "", beginLabel);
+        quadGen.emit("we", "", "", "");
+        quadGen.emit("label", endLabel, "", "");
+
     }
 
     void parseStatement() {
@@ -1318,7 +1782,39 @@ private:
             syntaxError("Expected statement");
         }
     }
+
+    string getTypeDefinition(const string& typeName) {
+        for (int scope = current_scope; scope >= 0; --scope) {
+            if (symbolTable.count(scope) && symbolTable[scope].count(typeName)) {
+                return symbolTable[scope][typeName];
+            }
+        }
+        semanticError("Type not defined: " + typeName);
+        return "";
+    }
+
+    bool isTypeDefined(const string& typeName) {
+        for (int scope = current_scope; scope >= 0; --scope) {
+            if (symbolTable.count(scope) && symbolTable[scope].count(typeName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    vector<string> split(const string& str, char delim) {
+        vector<string> result;
+        stringstream ss(str);
+        string item;
+        while (getline(ss, item, delim)) {
+            result.push_back(item);
+        }
+        return result;
+    }
 };
+
+
+
 
 int main() {
     ifstream fin("input.txt");
@@ -1345,13 +1841,15 @@ int main() {
         PascalParser parser(allTokens);
         parser.parse();
 
-        // === 打印符号表和类型表 ===
         printSymbolTable();
-        printTypeTable();
+        printConstTable();
+        printArrayTable();
+        printStructTable();
     }
     catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
         return 1;
     }
+    quadGen.printQuads();
     return 0;
 }
