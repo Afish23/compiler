@@ -657,6 +657,7 @@ private:
 
 
                 // 添加到符号表
+
                 symbolTable[current_scope][constName] = constType;
             } while (currentToken().type == I);
         }
@@ -664,7 +665,15 @@ private:
 
     void parseProgram() {
         matchKeyword(KW_PROGRAM);
+        string progName = currentToken().value;
         matchIdentifier(); // 程序名
+
+        // --- 加入符号表 ---
+        int typIdx = insertType(TypeCode::NONE); // 程序本身类型一般无具体类型
+        insertSymbol(progName, typIdx, CatCode::FUNC); // 类型和类别你可以自定义
+        symbolTable[current_scope][progName] = "program"; // 语义分析表也记一下
+
+
         // 跳过program行后的分号（Pascal允许）
         if (currentToken().type == D && currentToken().code == P_SEMICOLON)
             advance();
@@ -696,6 +705,7 @@ private:
 
                 // 符号表，类别为 CatCode::TYPE
                 insertSymbol(typeName, typIdx, CatCode::TYPE);
+                symbolTable[current_scope][typeName] = baseType;
 
             } while (currentToken().type == I);
         }
@@ -766,7 +776,8 @@ private:
 
                 // === 填写符号表 ===
                 for (const auto& id : identifiers) {
-                    insertSymbol(id, typIdx, CatCode::VAR);
+                    insertSymbol(id, typIdx, CatCode::VAR);  // 写全局符号表（用于打印）
+                    symbolTable[current_scope][id] = varType; // 写本地symbolTable供语义分析查找
                 }
 
 
