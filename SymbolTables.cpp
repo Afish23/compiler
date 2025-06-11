@@ -4,3 +4,7 @@ vector<SymbolTableEntry> symbolTable;
 vector<FuncTableEntry> funcTable;
 vector<ArrayTable> arrayTable;
 vector<StructTable> structTable;
+vector<ConstTableEntry> constTable;
+vector<FunctionEntry> functionTable;
+vector<ParaEntry> paramTable;
+vector<SizeTableEntry> sizeTable;

@@ -1,4 +1,4 @@
-﻿#include <iostream>//parseExpression()返回内容不同，我的返回类型，这个返回内容
+﻿#include <iostream>//符号表指向总表的指针
 #include <vector>
 #include <unordered_map>
 #include <cctype>
@@ -9,6 +9,8 @@
 #include <fstream> 
 #include "SymbolTablesUtils.h"
 using namespace std;
+
+
 
 struct Quadruple {
     string op;     // 操作符（如 "+", ":=", "jz" 等）
@@ -215,7 +217,7 @@ private:
                 else if (c == '.') {
                     if (isFloat) {//已被识别为浮点数的情况下又识别到一个小数点
                         hasError = true;
-                        if (hasError)cout << "1" << "\n";
+                        //if (hasError)cout << "1" << "\n";
                         buffer += c;
                         nextChar();
                         break;
@@ -227,7 +229,7 @@ private:
                 else if (c == 'e' || c == 'E') {
                     if (hasExp) {//已被识别为科学计数法的情况下又识别到一个e
                         hasError = true;
-                        if (hasError)cout << "2" << "\n";
+                        //if (hasError)cout << "2" << "\n";
                         buffer += c;
                         nextChar();
                         break;
@@ -257,7 +259,7 @@ private:
         // 检查非法后缀
         if (isalpha(currentChar())) {
             hasError = true;
-            if (hasError)cout << "3" << "\n";
+            //if (hasError)cout << "3" << "\n";
             buffer += currentChar();
             nextChar();
         }
@@ -299,7 +301,7 @@ private:
 
         if (currentChar() != '\'') {
             hasError = true;
-            if (hasError) cout << "4" << "\n";
+            //if (hasError) cout << "4" << "\n";
             throw runtime_error("Unclosed character/string literal");
         }
         nextChar(); // 跳过结束的单引号
@@ -328,7 +330,7 @@ private:
 
         if (currentChar() != '"') {
             hasError = true;
-            if (hasError)cout << "6" << "\n";
+            //if (hasError)cout << "6" << "\n";
             throw runtime_error("Unclosed string literal");
         }
         nextChar(); // 跳过结束的双引号
@@ -363,7 +365,7 @@ private:
         }
         else {
             hasError = true;
-            if (hasError)cout << "7" << "\n";
+            //if (hasError)cout << "7" << "\n";
             string op(1, currentChar());
             throw runtime_error("Unknown operator: " + op);
         }
@@ -448,7 +450,7 @@ public:
         }
         catch (const exception& e) {
             hasError = true;
-            if (hasError)cout << "12" << "\n";
+            //if (hasError)cout << "12" << "\n";
             return {};
         }
 
@@ -529,6 +531,7 @@ string delimToStr(int code) {
 // 语法分析器类（添加语义分析功能）
 class PascalParser {
 private:
+    string currentFieldName;
     // 关键字编码常量
     static constexpr int KW_PROGRAM = 1;
     static constexpr int KW_VAR = 2;
@@ -705,6 +708,7 @@ private:
                 string constName = currentToken().value;
                 matchIdentifier();
                 matchDelimiter(P_EQUAL);
+                string constValue = currentToken().value;
                 string constType = parseConstant(); // 解析常量值并返回类型
                 matchDelimiter(P_SEMICOLON);
 
@@ -719,8 +723,9 @@ private:
                 // ...扩展
 
                 int typIdx = insertType(tcode);
-
-
+                //cout << constValue << " " << typIdx << endl;
+                int cidx = insertConst(constValue, typIdx);
+                insertSymbol(constName, typIdx, CatCode::CONST, cidx);
                 // 添加到符号表
 
                 symbolTable[current_scope][constName] = constType;
@@ -773,6 +778,8 @@ private:
                     int low = 0;
                     if (currentToken().type == C1) {
                         low = stoi(currentToken().value);
+                        int typIdx = insertType(TypeCode::INT);
+                        insertConst(currentToken().value, typIdx);
                         advance();
                     }
                     matchDelimiter(P_DOTDOT);
@@ -780,70 +787,106 @@ private:
                     int up = 0;
                     if (currentToken().type == C1) {
                         up = stoi(currentToken().value);
+                        int typIdx = insertType(TypeCode::INT);
+                        insertConst(currentToken().value, typIdx);
                         advance();
                     }
                     matchDelimiter(P_RBRACKET);
                     matchKeyword(KW_OF);
-
-                    // 这里调用 parseType()，它只支持基本类型
-                    string baseType = parseType();
-                    // 你需要自己实现类型名到TypeCode的映射
-                    TypeCode tcode = TypeCode::NONE;
-                    if (baseType == "integer") tcode = TypeCode::INT;
-                    else if (baseType == "real") tcode = TypeCode::REAL;
-                    else if (baseType == "char") tcode = TypeCode::CHAR;
-                    else if (baseType == "boolean") tcode = TypeCode::BOOL;
-                    // ...补充其它
-
-                    int elemTypeIdx = insertType(tcode);
-
                     ArrayTable arr;
+                    arr.id = typeName;
+                    //cout << currentFieldName << endl;
+                    //cout << typeName << endl;
+                    string baseType = parseType();
+                    if (baseType == "integer") arr.ctp = "itp";
+                    else if (baseType == "real") arr.ctp = "rtp";
+                    else if (baseType == "char") arr.ctp = "ctp";
+                    else if (baseType == "boolean") arr.ctp = "btp";
+                    else arr.ctp = "?";
                     arr.low = low;
                     arr.up = up;
-                    arr.ctp = elemTypeIdx;
-                    arr.clen = 1; // 这里假设所有类型长度为1
+                    if (baseType == "integer") arr.clen = (up - low + 1) * 4;
+                    else if (baseType == "real") arr.clen = (up - low + 1) * 8;
+                    else if (baseType == "char") arr.clen = (up - low + 1) * 2;
+                    else if (baseType == "boolean") arr.clen = (up - low + 1) * 1;
                     int arrIdx = arrayTable.size();
                     arrayTable.push_back(arr);
-
                     typIdx = insertType(TypeCode::ARRAY, &arrayTable[arrIdx]);
+                    SizeTableEntry arrEntry;
+                    arrEntry.name = arr.id;      // or 变量名/类型名
+                    arrEntry.size = arr.clen;    // 直接用clen
+                    arrEntry.typeIdx = typIdx;   // 对应类型表下标
+                    sizeTable.push_back(arrEntry);
                 }
                 // ==== 检查是否为结构类型 ====
                 else if (currentToken().type == K && currentToken().code == KW_RECORD) {
+                    // ---------- 关键修改区 ----------
                     advance(); // 跳过 record
+                    unordered_map<string, string> fieldMap;
                     StructTable s;
                     int offset = 0;
                     while (!(currentToken().type == K && currentToken().code == KW_END)) {
-                        string fieldName = currentToken().value;
+                        // 字段列表支持多个
+                        vector<string> fieldNames;
+                        fieldNames.push_back(currentToken().value);
                         matchIdentifier();
+                        while (currentToken().type == D && currentToken().code == P_COMMA) {
+                            advance();
+                            fieldNames.push_back(currentToken().value);
+                            matchIdentifier();
+                        }
                         matchDelimiter(P_COLON);
-
-                        string fieldType = parseType();
+                        //string fieldType = parseType();
                         TypeCode tcode = TypeCode::NONE;
-                        if (fieldType == "integer") tcode = TypeCode::INT;
-                        else if (fieldType == "real") tcode = TypeCode::REAL;
-                        else if (fieldType == "char") tcode = TypeCode::CHAR;
-                        else if (fieldType == "boolean") tcode = TypeCode::BOOL;
 
-                        // ...补充其它
+                        for (const auto& fieldName : fieldNames) {
+                            StructField f;
+                            currentFieldName = fieldName;
+                            string fieldType = parseType();//cout << fieldType << endl;
+                            f.id = fieldName;
+                            if (fieldType == "integer") { f.tp = "itp"; }
+                            else if (fieldType == "real") { f.tp = "rtp"; }
+                            else if (fieldType == "char") { f.tp = "ctp"; }
+                            else if (fieldType == "boolean") { f.tp = "btp"; }
+                            else if (fieldType == "packed array of char" || fieldType == "array of char") { f.tp = "arr"; }
+                            f.off = offset;
+                            int fieldLen = 0;
+                            if (fieldType == "integer")  fieldLen = 4;
+                            else if (fieldType == "real")  fieldLen = 8;
+                            else if (fieldType == "char")  fieldLen = 2;
+                            else if (fieldType == "boolean")  fieldLen = 1;
+                            else if (fieldType == "packed array of char" || fieldType == "array of char") {
+                                for (const auto& arr : arrayTable) {
+                                    //cout << arr.id <<" "<<fieldName << endl;
+                                    //cout << arr.id << " " << fieldName <<" "<<1 << endl;
+                                    if (arr.id == fieldName) { // 用字段名查
+                                        fieldLen = arr.clen;
+                                        break;
+                                    }
+                                }
+                            }
+                            offset += fieldLen;
+                            s.fields.push_back(f);
 
-                        int fieldTypeIdx = insertType(tcode);
-
-                        StructField f;
-                        f.id = fieldName;
-                        f.tp = fieldTypeIdx;
-                        f.off = offset;
-                        int fieldLen = 1; // 简单处理
-                        offset += fieldLen;
-
-                        s.fields.push_back(f);
-
+                            // ---------- 关键：写入 recordFieldTypes ----------
+                            fieldMap[fieldName] = fieldType;
+                        }
                         matchDelimiter(P_SEMICOLON);
                     }
                     matchKeyword(KW_END);
 
+                    SizeTableEntry entry;
+                    entry.name = typeName;
+                    entry.size = offset;
+                    entry.typeIdx = typIdx;
+                    sizeTable.push_back(entry);
+
                     int stIdx = structTable.size();
                     structTable.push_back(s);
                     typIdx = insertType(TypeCode::RECORD, &structTable[stIdx]);
+
+                    // ---------- 关键：写入 recordFieldTypes ----------
+                    recordFieldTypes[typeName] = fieldMap;
                 }
                 // ==== 基本类型/类型别名 ====
                 else {
@@ -925,6 +968,7 @@ private:
                 matchIdentifier();
 
                 while (currentToken().type == D && currentToken().code == P_COMMA) {
+
                     advance();
                     identifiers.push_back(currentToken().value);
                     matchIdentifier();
@@ -932,6 +976,7 @@ private:
 
                 matchDelimiter(P_COLON);
                 string varType = parseType(); // 返回类型字符串
+                //cout << currentToken().value << endl;
                 matchDelimiter(P_SEMICOLON);
                 // === 填写类型表 ===Add commentMore actions
                 TypeCode tcode = TypeCode::NONE;
@@ -940,13 +985,16 @@ private:
                 else if (varType == "char") tcode = TypeCode::CHAR;
                 else if (varType == "boolean") tcode = TypeCode::BOOL;
                 // ... 其他类型
-
+                //cout << currentToken().value<<" "<< varType << endl;
                 int typIdx = insertType(tcode);
+
 
                 // === 填写符号表 ===
                 // 添加到符号表
+
                 for (const auto& id : identifiers) {
-                    insertSymbol(id, typIdx, CatCode::VAR);  // 写全局符号表（用于打印）
+                    //cout << id << " " << typIdx << " " << varType << endl;
+                    insertSymbol(id, typIdx, CatCode::VAR, varType);  // 写全局符号表（用于打印）
                     symbolTable[current_scope][id] = varType; // 写本地symbolTable供语义分析查找
                     symbolTable[current_scope][id] = varType;
                 }
@@ -956,55 +1004,114 @@ private:
 
 
     // 语义分析：解析类型标识符
-    string parseType() {
-        // 1. 检查用户定义类型标识符
+    // 可选参数 fieldOrTypeName，遇到数组时用于 arrayTable.id 字段存储
+    string parseType(const string& fieldOrTypeName = "") {
+        // 1. 用户定义类型标识符/类型别名
         if (currentToken().type == I) {
             string typeName = currentToken().value;
             advance();
             return typeName;
         }
 
-        // 2. 检查记录类型
+        // 2. record
         if (currentToken().type == K && currentToken().code == KW_RECORD) {
-            return parseRecordType();
+            return parseRecordType(); // 你的原实现
         }
 
-        // 3. 检查packed array类型
+        // 3. packed array
         if (currentToken().type == K && currentToken().code == KW_PACKED) {
             advance();
             matchKeyword(KW_ARRAY);
             matchDelimiter(P_LBRACKET);
 
-            // 解析下标范围
-            parseExpression(); // 下界
+            int low = 0, up = 0;
+            if (currentToken().type == C1) {
+                low = stoi(currentToken().value);
+                int typIdx = insertType(TypeCode::INT);
+                insertConst(currentToken().value, typIdx);
+                advance();
+            }
             matchDelimiter(P_DOTDOT);
-            parseExpression(); // 上界
-
+            if (currentToken().type == C1) {
+                up = stoi(currentToken().value);
+                int typIdx = insertType(TypeCode::INT);
+                insertConst(currentToken().value, typIdx);
+                advance();
+            }
             matchDelimiter(P_RBRACKET);
             matchKeyword(KW_OF);
 
-            string elementType = parseType();
+            string elementType = parseType(); // 递归，支持嵌套
+
+            // 插入 arrayTable
+            ArrayTable arr;
+            arr.id = currentFieldName; // 类型名或字段名
+            //cout<< currentFieldName<<endl;
+            arr.low = low;
+            arr.up = up;
+            arr.ctp = elementType;
+            if (elementType == "integer") arr.clen = (up - low + 1) * 4;
+            else if (elementType == "real") arr.clen = (up - low + 1) * 8;
+            else if (elementType == "char") arr.clen = (up - low + 1) * 2;
+            else if (elementType == "boolean") arr.clen = (up - low + 1) * 1;
+            else arr.clen = 0;
+            arrayTable.push_back(arr);
+            //SizeTableEntry arrEntry1;
+            //arrEntry1.name = arr.id;      // or 变量名/类型名
+            //arrEntry1.size = arr.clen;    // 直接用clen
+            //arrEntry1.typeIdx = typIdx;   // 对应类型表下标
+            int a = insertSize(arr.id, arr.clen, 0);
+            insertSymbol(arr.id, 0, CatCode::FIELD, a);
             return "packed array of " + elementType;
         }
 
-        // 4. 检查普通数组类型
+        // 4. 普通 array
         if (currentToken().type == K && currentToken().code == KW_ARRAY) {
             advance();
             matchDelimiter(P_LBRACKET);
 
-            // 解析下标范围
-            parseExpression(); // 下界
+            int low = 0, up = 0;
+            if (currentToken().type == C1) {
+                low = stoi(currentToken().value);
+                int typIdx = insertType(TypeCode::INT);
+                insertConst(currentToken().value, typIdx);
+                advance();
+            }
             matchDelimiter(P_DOTDOT);
-            parseExpression(); // 上界
-
+            if (currentToken().type == C1) {
+                up = stoi(currentToken().value);
+                int typIdx = insertType(TypeCode::INT);
+                insertConst(currentToken().value, typIdx);
+                advance();
+            }
             matchDelimiter(P_RBRACKET);
             matchKeyword(KW_OF);
 
-            string elementType = parseType();
-            return "array of " + elementType;
+            string elementType = parseType(); // 递归，支持嵌套
+
+            // 插入 arrayTable
+            ArrayTable arr;
+            arr.id = currentFieldName; // 类型名或字段名
+            //cout<< currentFieldName<<endl;
+            arr.low = low;
+            arr.up = up;
+            arr.ctp = elementType;
+            if (elementType == "integer") arr.clen = (up - low + 1) * 4;
+            else if (elementType == "real") arr.clen = (up - low + 1) * 8;
+            else if (elementType == "char") arr.clen = (up - low + 1) * 2;
+            else if (elementType == "boolean") arr.clen = (up - low + 1) * 1;
+            else arr.clen = 0;
+            arrayTable.push_back(arr);
+            //SizeTableEntry arrEntry1;
+            //arrEntry1.name = arr.id;      // or 变量名/类型名
+            //arrEntry1.size = arr.clen;    // 直接用clen
+            //arrEntry1.typeIdx = typIdx;   // 对应类型表下标
+            int a = insertSize(arr.id, arr.clen, 0);
+            insertSymbol(arr.id, 0, CatCode::FIELD, a);
+            return "packed array of " + elementType;
         }
 
-        // 5. 处理基本类型
+        // 5. 基本类型
         if (currentToken().type != K) {
             syntaxError("Expected type keyword or identifier");
         }
@@ -1015,7 +1122,6 @@ private:
         if (typeMap.find(typeCode) == typeMap.end()) {
             semanticError("Invalid type specified");
         }
-
         return typeMap.at(typeCode);
     }
 
@@ -1073,36 +1179,45 @@ private:
         matchKeyword(KW_PROCEDURE);
         string procName = currentToken().value;
         matchIdentifier();
-        // 这里插入过程名到主符号表Add commentMore actions
+
         int typIdx = insertType(TypeCode::NONE); // 或你的过程类型
         insertSymbol(procName, typIdx, CatCode::FUNC);
 
-        // 进入新作用域
         enterScope();
-        matchDelimiter(P_LPAREN);
 
-        // 参数列表
+        int level = 0; // 当前作用域
+        int off = 3;   // 参数区偏移
+        int entry = 0;
+        int paramStart = paramTable.size(); // 记录第一个参数在参数表的位置
+
+        int paramCount = 0;
         if (currentToken().type == D && currentToken().code == P_LPAREN) {
             advance();
             if (currentToken().type != D || currentToken().code != P_RPAREN) {
+                int before = paramTable.size();
                 parseParameterList();
+                paramCount = paramTable.size() - before;
             }
             matchDelimiter(P_RPAREN);
         }
+        else {
+            paramCount = 0;
+        }
         matchDelimiter(P_SEMICOLON);
 
-        // 允许过程体内的 var 声明
-        parseVarDeclarations();
+        functionTable.push_back(FunctionEntry{
+            procName, level, off, paramCount, entry, paramStart
+            });
 
+        // ...后续过程体
+        parseVarDeclarations();
         matchKeyword(KW_BEGIN);
         parseFunctionBody();
         matchKeyword(KW_END);
-        matchDelimiter(P_RPAREN);
         matchDelimiter(P_SEMICOLON);
 
         exitScope();
     }
-
 
     // 语义分析：进入新作用域
     void enterScope() {
@@ -1120,55 +1235,58 @@ private:
 
     // 语义分析：解析参数列表
     void parseParameterList() {
+        int off = 0; // 参数区偏移量累加器
         while (true) {
-            // 检查是否以右括号结束
             if (currentToken().type == D && currentToken().code == P_RPAREN) {
                 return;
             }
-
-            // 检查是否有 var 关键字（引用参数）
             bool isReference = false;
             if (currentToken().type == K && currentToken().code == KW_VAR) {
                 isReference = true;
-                advance(); // 跳过 'var'
+                advance();
             }
-
-            // 获取标识符列表
             vector<string> identifiers;
             identifiers.push_back(currentToken().value);
             matchIdentifier();
-
             while (currentToken().type == D && currentToken().code == P_COMMA) {
                 advance();
                 identifiers.push_back(currentToken().value);
                 matchIdentifier();
             }
-
             matchDelimiter(P_COLON);
-            string paramType = parseType(); // 获取参数类型
+            string paramType = parseType();
+            int typIdx = -1;
+            if (paramType == "integer") typIdx = insertType(TypeCode::INT);
+            else if (paramType == "real") typIdx = insertType(TypeCode::REAL);
+            else if (paramType == "char") typIdx = insertType(TypeCode::CHAR);
+            else if (paramType == "boolean") typIdx = insertType(TypeCode::BOOL);
 
-            // 添加参数到符号表，标记引用类型
-            for (const auto& id : identifiers) {
-                symbolTable[current_scope][id] = isReference ? "ref " + paramType : paramType;
-                int typIdx = -1;
-                if (paramType == "integer") typIdx = insertType(TypeCode::INT);
-                else if (paramType == "real") typIdx = insertType(TypeCode::REAL);
-                else if (paramType == "char") typIdx = insertType(TypeCode::CHAR);
-                else if (paramType == "boolean") typIdx = insertType(TypeCode::BOOL);
-
-                // ... 其它类型
-                insertSymbol(id, typIdx, isReference ? CatCode::VF : CatCode::VN);
-            }
-
-            // 检查参数分隔符
-            if (currentToken().type == D && currentToken().code == P_SEMICOLON) {
-                advance(); // 跳过 ';'
+            int size = 0;
+            if (isReference) {
+                size = 2; // vf（引用参数）固定为2
             }
             else {
-                break; // 参数列表结束
+                size = getTypeLen(typIdx); // vn按类型大小
+            }
+
+            for (const auto& id : identifiers) {
+                symbolTable[current_scope][id] = isReference ? "ref " + paramType : paramType;
+                insertSymbol(id, typIdx, isReference ? CatCode::VF : CatCode::VN);
+
+                paramTable.push_back(
+                    ParaEntry{ id, typIdx, isReference ? "vf" : "vn", off }
+                );
+                off += size;
+            }
+            if (currentToken().type == D && currentToken().code == P_SEMICOLON) {
+                advance();
+            }
+            else {
+                break;
             }
         }
     }
+
 
     // 函数体解析
     void parseFunctionBody() {
@@ -1337,10 +1455,9 @@ private:
         string left = parseTerm();
         string leftType = getBaseType(getExprType(left));
 
-        while (currentToken().type == D &&
-            (currentToken().code == P_PLUS ||
-                currentToken().code == P_MINUS ||
-                currentToken().code == KW_OR)) {
+        while ((currentToken().type == D &&
+            (currentToken().code == P_PLUS || currentToken().code == P_MINUS)) ||
+            (currentToken().type == K && currentToken().code == KW_OR)) {
 
             int opCode = currentToken().code;
             Token op = currentToken();
@@ -1394,7 +1511,7 @@ private:
                 currentToken().code == P_SLASH ||
                 currentToken().code == KW_DIV ||
                 currentToken().code == KW_MOD ||
-                currentToken().code == KW_AND)) {
+                (currentToken().type == K && currentToken().code == KW_AND))) {
 
             int opCode = currentToken().code;
             Token op = currentToken();
@@ -1441,8 +1558,17 @@ private:
             matchIdentifier();
             return varName;
         }
-        else if (currentToken().type == C1 || currentToken().type == C2) {
+        else if (currentToken().type == C1) {
             string value = currentToken().value;
+            int typIdx = insertType(TypeCode::INT);
+            insertConst(value, typIdx); // 插入常量表
+            advance();
+            return value;
+        }
+        else if (currentToken().type == C2) {
+            string value = currentToken().value;
+            int typIdx = insertType(TypeCode::REAL);
+            insertConst(value, typIdx); // 插入常量表
             advance();
             return value;
         }
@@ -1738,9 +1864,6 @@ private:
         }
         return result;
     }
-
-
-
 };
 
 
@@ -1771,7 +1894,17 @@ int main() {
         PascalParser parser(allTokens);
         parser.parse();
 
+
+        syncParamAddrToSymbolTable(); // 关键同步
+
         printSymbolTable();
+        printConstTable();
+        printArrayTable();
+        printStructTable();
+        printSizeTable();
+        printFunctionTable();
+        printParaTable();
+
     }
     catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;

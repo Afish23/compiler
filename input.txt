@@ -1,21 +1,37 @@
-program exProcedure;
+program exRecords;
+const
+  Pi = 3.14159;
+  MaxBooks = 200;
+  DefaultName = 'A';
+type
+  b = array [1 .. 50] of integer;
+  Books = record
+    book_id: integer;
+    title: packed array [1 .. 20] of char;
+    author: packed array [1 .. 40] of char;
+    subject: array [1 .. 100] of char;
+  end;
+
 var
-  a, b, c, min: integer;
-
-procedure findMin(x, y, z: integer; var m: integer); 
-begin
-   if x < y then
-      m := x  
-   else
-      m := y;
-   
-   if z < m then
-      m := z;
-end; 
+  Book1, Book2: Books; 
+  a, c: real;
+  idx: integer;
 
 begin
-   a := 10;
-   b := 20;
-   c := 15;
-   
+  Book1.title  := 'C Programming';
+  Book1.author := 'Nuha Ali '; 
+  Book1.subject := 'C Programming Tutorial';
+  Book1.book_id := 6495407;
+  a := c + 3.14;
+  idx := 1;
+  if MaxBooks > 100 then
+    a := a + Pi
+  else
+    a := a - Pi;
+
+  while idx >= 5 do
+  begin
+    Book2.book_id := idx;
+    idx := idx + 1;
+  end;
 end.
