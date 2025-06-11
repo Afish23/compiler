@@ -16,16 +16,19 @@ struct TypeTableEntry {
     void* tpoint;              // 指针：基本类型为空，数组型指向 ArrayTable，结构型指向 StructTable
 
     TypeTableEntry(TypeCode code = TypeCode::NONE, void* ptr = nullptr)
-        : tval(code), tpoint(ptr) {}
+        : tval(code), tpoint(ptr) {
+    }
 };
-
 extern vector<TypeTableEntry> typeTable;
+
+
 
 //=== 数组表 ===
 struct ArrayTable {
+    string id;
     int low = 0;                // 下界，默认为0
     int up;                     // 上界
-    int ctp;                    // 成分类型指针(类型表下标)
+    string ctp;                    // 成分类型指针(类型表下标)
     int clen;                   // 成分类型长度
 };
 
@@ -33,7 +36,7 @@ struct ArrayTable {
 struct StructField {
     string id;        // 域名
     int off;          // 区距
-    int tp;           // 类型表下标
+    string tp;           // 类型表下标
 };
 
 struct StructTable {
@@ -43,7 +46,7 @@ struct StructTable {
 
 
 //=== 符号表条目 ===
-enum class CatCode { FUNC, CONST, TYPE, FIELD, VAR, VN, VF, NONE };
+enum class CatCode { FUNC, CONST, TYPE, FIELD, VAR, VN, VF, NONE, PROCEDURE };
 
 struct SymbolTableEntry {
     string name;        // 标识符名
@@ -54,13 +57,10 @@ struct SymbolTableEntry {
 
 extern vector<SymbolTableEntry> symbolTable;
 
-//参数表
-struct ParamEntry {
-    string name;
-    int typ;
-    CatCode cat; // vn/vf
-    int addr;
-};
+
+
+extern vector<ArrayTable> arrayTable;
+extern vector<StructTable> structTable;
 //函数表
 struct FuncTableEntry {
     int level;      // 层次号
@@ -70,3 +70,10 @@ struct FuncTableEntry {
     int entry;      // 入口地址
 };
 extern vector<FuncTableEntry> funcTable;
+
+// 常量表
+struct ConstTableEntry {
+    string value; // 常量的字面值
+    int typeIdx;       // 类型表下标
+};
+extern vector<ConstTableEntry> constTable;
