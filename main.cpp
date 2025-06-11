@@ -7,8 +7,7 @@
 #include <iomanip>
 #include <sstream>
 #include <fstream> 
-//#include "SymbolTablesUtils.h"
-//#include"SymbolTables.h"
+#include "SymbolTablesUtils.h"
 using namespace std;
 
 struct Quadruple {
@@ -709,7 +708,21 @@ private:
                 string constType = parseConstant(); // 解析常量值并返回类型
                 matchDelimiter(P_SEMICOLON);
 
+                // 类型表填写Add commentMore actions
+                TypeCode tcode = TypeCode::NONE;
+                if (constType == "integer") tcode = TypeCode::INT;
+                else if (constType == "real") tcode = TypeCode::REAL;
+                else if (constType == "char") tcode = TypeCode::CHAR;
+                else if (constType == "boolean") tcode = TypeCode::BOOL;
+                else if (constType == "boolean") tcode = TypeCode::BOOL;
+
+                // ...扩展
+
+                int typIdx = insertType(tcode);
+
+
                 // 添加到符号表
+
                 symbolTable[current_scope][constName] = constType;
             } while (currentToken().type == I);
         }
@@ -717,7 +730,13 @@ private:
 
     void parseProgram() {
         matchKeyword(KW_PROGRAM);
+        string progName = currentToken().value;
         matchIdentifier(); // 程序名
+
+        // --- 加入符号表 ---
+        int typIdx = insertType(TypeCode::NONE); // 程序本身类型一般无具体类型
+        insertSymbol(progName, typIdx, CatCode::FUNC); // 类型和类别你可以自定义
+        symbolTable[current_scope][progName] = "program"; // 语义分析表也记一下
         // 跳过program行后的分号（Pascal允许）
         if (currentToken().type == D && currentToken().code == P_SEMICOLON)
             advance();
@@ -743,16 +762,108 @@ private:
                 string typeName = currentToken().value;
                 matchIdentifier();
                 matchDelimiter(P_EQUAL);
-                if (currentToken().type == K && currentToken().code == KW_RECORD) {
-                    parseRecordType(typeName); // 传入类型名
-                    matchDelimiter(P_SEMICOLON);
-                    symbolTable[0][typeName] = typeName;
+
+                int typIdx = -1;
+
+                // ==== 检查是否为数组类型 ====
+                if (currentToken().type == K && currentToken().code == KW_ARRAY) {
+                    advance(); // 跳过 array
+                    matchDelimiter(P_LBRACKET);
+
+                    int low = 0;
+                    if (currentToken().type == C1) {
+                        low = stoi(currentToken().value);
+                        advance();
+                    }
+                    matchDelimiter(P_DOTDOT);
+
+                    int up = 0;
+                    if (currentToken().type == C1) {
+                        up = stoi(currentToken().value);
+                        advance();
+                    }
+                    matchDelimiter(P_RBRACKET);
+                    matchKeyword(KW_OF);
+
+                    // 这里调用 parseType()，它只支持基本类型
+                    string baseType = parseType();
+                    // 你需要自己实现类型名到TypeCode的映射
+                    TypeCode tcode = TypeCode::NONE;
+                    if (baseType == "integer") tcode = TypeCode::INT;
+                    else if (baseType == "real") tcode = TypeCode::REAL;
+                    else if (baseType == "char") tcode = TypeCode::CHAR;
+                    else if (baseType == "boolean") tcode = TypeCode::BOOL;
+                    // ...补充其它
+
+                    int elemTypeIdx = insertType(tcode);
+
+                    ArrayTable arr;
+                    arr.low = low;
+                    arr.up = up;
+                    arr.ctp = elemTypeIdx;
+                    arr.clen = 1; // 这里假设所有类型长度为1
+                    int arrIdx = arrayTable.size();
+                    arrayTable.push_back(arr);
+
+                    typIdx = insertType(TypeCode::ARRAY, &arrayTable[arrIdx]);
                 }
+                // ==== 检查是否为结构类型 ====
+                else if (currentToken().type == K && currentToken().code == KW_RECORD) {
+                    advance(); // 跳过 record
+                    StructTable s;
+                    int offset = 0;
+                    while (!(currentToken().type == K && currentToken().code == KW_END)) {
+                        string fieldName = currentToken().value;
+                        matchIdentifier();
+                        matchDelimiter(P_COLON);
+
+                        string fieldType = parseType();
+                        TypeCode tcode = TypeCode::NONE;
+                        if (fieldType == "integer") tcode = TypeCode::INT;
+                        else if (fieldType == "real") tcode = TypeCode::REAL;
+                        else if (fieldType == "char") tcode = TypeCode::CHAR;
+                        else if (fieldType == "boolean") tcode = TypeCode::BOOL;
+
+                        // ...补充其它
+
+                        int fieldTypeIdx = insertType(tcode);
+
+                        StructField f;
+                        f.id = fieldName;
+                        f.tp = fieldTypeIdx;
+                        f.off = offset;
+                        int fieldLen = 1; // 简单处理
+                        offset += fieldLen;
+
+                        s.fields.push_back(f);
+
+                        matchDelimiter(P_SEMICOLON);
+                    }
+                    matchKeyword(KW_END);
+
+                    int stIdx = structTable.size();
+                    structTable.push_back(s);
+                    typIdx = insertType(TypeCode::RECORD, &structTable[stIdx]);
+                }
+                // ==== 基本类型/类型别名 ====
                 else {
-                    string typeDef = parseType();
-                    matchDelimiter(P_SEMICOLON);
-                    symbolTable[0][typeName] = typeDef;
+                    string baseType = parseType();
+                    TypeCode tcode = TypeCode::NONE;
+                    if (baseType == "integer") tcode = TypeCode::INT;
+                    else if (baseType == "real") tcode = TypeCode::REAL;
+                    else if (baseType == "char") tcode = TypeCode::CHAR;
+                    else if (baseType == "boolean") tcode = TypeCode::BOOL;
+
+                    // ...补充其它
+                    typIdx = insertType(tcode);
                 }
+
+                matchDelimiter(P_SEMICOLON);
+
+                // 符号表，类别为 CatCode::TYPE
+                insertSymbol(typeName, typIdx, CatCode::TYPE);
+                symbolTable[current_scope][typeName] = "type";
+
             } while (currentToken().type == I);
         }
     }
@@ -771,6 +882,37 @@ private:
         return varName;
     }
 
+
+
+    vector<string> parseIdentifierList2() {
+        vector<string> names;
+        names.push_back(currentToken().value);
+        matchIdentifier();
+        while (currentToken().type == D && currentToken().code == P_COMMA) {
+            advance();
+            names.push_back(currentToken().value);
+            matchIdentifier();
+        }
+        return names;
+    }
+
+    string parseType2() {
+        if (currentToken().type == K) {
+            int code = currentToken().code;
+            if (code == KW_INTEGER) { advance(); return "integer"; }
+            if (code == KW_REAL) { advance(); return "real"; }
+            if (code == KW_CHAR) { advance(); return "char"; }
+            if (code == KW_BOOLEAN) { advance(); return "boolean"; }
+            if (code == KW_PROCEDURE) { advance(); return "procedure"; }
+        }
+        else if (currentToken().type == I) {
+            string s = currentToken().value;
+            advance();
+            return s;
+        }
+        syntaxError("Expected type keyword or identifier");
+        return "";
+    }
 
     // 语义分析：变量声明处理（符号表填充）
     void parseVarDeclarations() {
@@ -791,9 +933,21 @@ private:
                 matchDelimiter(P_COLON);
                 string varType = parseType(); // 返回类型字符串
                 matchDelimiter(P_SEMICOLON);
+                // === 填写类型表 ===Add commentMore actions
+                TypeCode tcode = TypeCode::NONE;
+                if (varType == "integer") tcode = TypeCode::INT;
+                else if (varType == "real") tcode = TypeCode::REAL;
+                else if (varType == "char") tcode = TypeCode::CHAR;
+                else if (varType == "boolean") tcode = TypeCode::BOOL;
+                // ... 其他类型
 
+                int typIdx = insertType(tcode);
+
+                // === 填写符号表 ===
                 // 添加到符号表
                 for (const auto& id : identifiers) {
+                    insertSymbol(id, typIdx, CatCode::VAR);  // 写全局符号表（用于打印）
+                    symbolTable[current_scope][id] = varType; // 写本地symbolTable供语义分析查找
                     symbolTable[current_scope][id] = varType;
                 }
             } while (currentToken().type == I);
@@ -919,9 +1073,13 @@ private:
         matchKeyword(KW_PROCEDURE);
         string procName = currentToken().value;
         matchIdentifier();
+        // 这里插入过程名到主符号表Add commentMore actions
+        int typIdx = insertType(TypeCode::NONE); // 或你的过程类型
+        insertSymbol(procName, typIdx, CatCode::FUNC);
 
         // 进入新作用域
         enterScope();
+        matchDelimiter(P_LPAREN);
 
         // 参数列表
         if (currentToken().type == D && currentToken().code == P_LPAREN) {
@@ -939,6 +1097,7 @@ private:
         matchKeyword(KW_BEGIN);
         parseFunctionBody();
         matchKeyword(KW_END);
+        matchDelimiter(P_RPAREN);
         matchDelimiter(P_SEMICOLON);
 
         exitScope();
@@ -991,6 +1150,14 @@ private:
             // 添加参数到符号表，标记引用类型
             for (const auto& id : identifiers) {
                 symbolTable[current_scope][id] = isReference ? "ref " + paramType : paramType;
+                int typIdx = -1;
+                if (paramType == "integer") typIdx = insertType(TypeCode::INT);
+                else if (paramType == "real") typIdx = insertType(TypeCode::REAL);
+                else if (paramType == "char") typIdx = insertType(TypeCode::CHAR);
+                else if (paramType == "boolean") typIdx = insertType(TypeCode::BOOL);
+
+                // ... 其它类型
+                insertSymbol(id, typIdx, isReference ? CatCode::VF : CatCode::VN);
             }
 
             // 检查参数分隔符
@@ -1603,6 +1770,8 @@ int main() {
     try {
         PascalParser parser(allTokens);
         parser.parse();
+
+        printSymbolTable();
     }
     catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
