@@ -529,6 +529,7 @@ string delimToStr(int code) {
 // 语法分析器类（添加语义分析功能）
 class PascalParser {
 private:
+    string currentFieldName;
     // 关键字编码常量
     static constexpr int KW_PROGRAM = 1;
     static constexpr int KW_VAR = 2;
@@ -791,9 +792,9 @@ private:
                     matchDelimiter(P_RBRACKET);
                     matchKeyword(KW_OF);
                     ArrayTable arr;
+                    //arr.id = currentFieldName;
+                    //cout << currentFieldName << endl;
                     //cout << typeName << endl;
-                    //arr.id = typeName;
-                    cout << typeName << endl;
                     string baseType = parseType();
                     if (baseType == "integer") arr.ctp = "itp";
                     else if (baseType == "real") arr.ctp = "rtp";
@@ -829,11 +830,13 @@ private:
                         matchIdentifier();
                     }
                     matchDelimiter(P_COLON);
-                    string fieldType = parseType();
+                    //string fieldType = parseType();
                     TypeCode tcode = TypeCode::NONE;
-                    cout << fieldType << endl;
+                   
                     for (const auto& fieldName : fieldNames) {
                         StructField f;
+                        currentFieldName = fieldName; //cout << currentFieldName << endl;
+                        string fieldType = parseType();
                         f.id = fieldName;
                         if (fieldType == "integer") { f.tp = "itp"; }
                         else if (fieldType == "real") { f.tp = "rtp"; }
@@ -848,6 +851,7 @@ private:
                         else if (fieldType == "boolean")  fieldLen = 1; 
                         else if (fieldType == "packed array of char") {
                             for (const auto& arr : arrayTable) {
+                                //cout << arr.id <<" "<<fieldName << endl;
                                 //cout << arr.id << " " << fieldName <<" "<<1 << endl;
                                 if (arr.id == fieldName) { // 用字段名查
                                     fieldLen = arr.clen;
@@ -1020,7 +1024,8 @@ private:
 
             // 插入 arrayTable
             ArrayTable arr;
-            arr.id = fieldOrTypeName; // 类型名或字段名
+            arr.id = currentFieldName; // 类型名或字段名
+            //cout<< currentFieldName<<endl;
             arr.low = low;
             arr.up = up;
             arr.ctp = elementType;
